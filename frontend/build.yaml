@@ -1,0 +1,12 @@
+targets:
+  $default:
+    builders:
+      freezed:
+        generate_for:
+          - lib/**/*.dart
+      json_serializable:
+        generate_for:
+          - lib/**/*.dart
+        options:
+          explicit_to_json: true
+

@@ -1,0 +1,77 @@
+name: storyheroapp
+description: "StoryHero - приложение для создания персонализированных детских книг"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  
+  # State Management
+  flutter_hooks: ^0.20.5
+  hooks_riverpod: ^2.5.1
+  
+  # Networking
+  dio: ^5.4.2
+  
+  # Routing
+  go_router: ^13.2.0
+  
+  # Code Generation
+  json_annotation: ^4.8.1
+  freezed_annotation: ^2.4.1
+  
+  # Utilities
+  intl: ^0.19.0
+  path: ^1.9.0
+  transparent_image: ^2.0.0
+  cached_network_image: ^3.3.1
+  image_picker: ^1.0.7
+  app_links: ^6.4.1
+  lottie: ^3.1.0
+  flutter_secure_storage: ^9.0.0
+  flutter_image_compress: ^2.3.0
+  path_provider: ^2.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  
+  # Code Generation
+  build_runner: ^2.4.8
+  freezed: ^2.4.7
+  json_serializable: ^6.7.1
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.3.10
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon.png
+    - assets/icon/
+    - assets/logo/
+    - assets/animations/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/icon.png"
+
+flutter_native_splash:
+  color: "#000000"  # Черный фон
+  image: assets/logo/storyhero_start.png
+  android: true
+  android_12:
+    image: assets/logo/storyhero_start.png
+    color: "#000000"

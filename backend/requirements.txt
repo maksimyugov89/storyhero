@@ -1,0 +1,26 @@
+fastapi
+uvicorn[standard]
+pydantic
+sqlalchemy
+psycopg2-binary
+python-dotenv
+python-multipart
+requests
+httpx
+# JWT и безопасность
+PyJWT[crypto]
+cryptography
+python-jose[cryptography]
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
+# OpenAI клиент для DeepSeek
+openai
+# Обработка изображений и Face Swap
+opencv-python-headless
+insightface
+onnxruntime
+# Дополнительные зависимости
+numpy
+pillow
+email-validator
+apscheduler

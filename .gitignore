@@ -1,0 +1,65 @@
+# =========================
+# GLOBAL
+# =========================
+.env
+.env.*
+*.log
+*.tmp
+*.bak
+
+# =========================
+# FLUTTER / FRONTEND
+# =========================
+frontend/.dart_tool/
+frontend/build/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.idea/
+frontend/.vscode/
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/android/key.properties
+frontend/ios/Pods/
+frontend/ios/.symlinks/
+frontend/macos/Pods/
+
+# =========================
+# BACKEND / PYTHON
+# =========================
+backend/__pycache__/
+backend/**/*.pyc
+backend/venv/
+backend/.venv/
+backend/.pytest_cache/
+backend/app/__pycache__/
+
+# =========================
+# AI / MODELS
+# =========================
+backend/models_insightface/*
+!backend/models_insightface/.gitkeep
+
+# =========================
+# DATABASE / BACKUPS
+# =========================
+backend/backup/*
+backend/*.db
+
+# =========================
+# SSH / SECRETS
+# =========================
+backend/ssh/
+*.pem
+*.key
+
+# =========================
+# OS / IDE
+# =========================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+# =========================
+# FRONTEND SECRETS
+# =========================
+frontend/lib/secrets.dart
