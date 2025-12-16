@@ -32,7 +32,7 @@ mixin _$Scene {
   String? get imagePrompt => throw _privateConstructorUsedError; // Сделано опциональным, т.к. API может не возвращать
   @JsonKey(name: 'draft_url')
   String? get draftUrl => throw _privateConstructorUsedError;
-  @JsonKey(name: 'final_url')
+  @JsonKey(name: 'image_url', fromJson: _imageUrlFromJson)
   String? get finalUrl => throw _privateConstructorUsedError;
 
   /// Serializes this Scene to a JSON map.
@@ -57,7 +57,7 @@ abstract class $SceneCopyWith<$Res> {
     String shortSummary,
     @JsonKey(name: 'image_prompt') String? imagePrompt,
     @JsonKey(name: 'draft_url') String? draftUrl,
-    @JsonKey(name: 'final_url') String? finalUrl,
+    @JsonKey(name: 'image_url', fromJson: _imageUrlFromJson) String? finalUrl,
   });
 }
 
@@ -136,7 +136,7 @@ abstract class _$$SceneImplCopyWith<$Res> implements $SceneCopyWith<$Res> {
     String shortSummary,
     @JsonKey(name: 'image_prompt') String? imagePrompt,
     @JsonKey(name: 'draft_url') String? draftUrl,
-    @JsonKey(name: 'final_url') String? finalUrl,
+    @JsonKey(name: 'image_url', fromJson: _imageUrlFromJson) String? finalUrl,
   });
 }
 
@@ -208,7 +208,7 @@ class _$SceneImpl implements _Scene {
     required this.shortSummary,
     @JsonKey(name: 'image_prompt') this.imagePrompt,
     @JsonKey(name: 'draft_url') this.draftUrl,
-    @JsonKey(name: 'final_url') this.finalUrl,
+    @JsonKey(name: 'image_url', fromJson: _imageUrlFromJson) this.finalUrl,
   });
 
   factory _$SceneImpl.fromJson(Map<String, dynamic> json) =>
@@ -233,7 +233,7 @@ class _$SceneImpl implements _Scene {
   @JsonKey(name: 'draft_url')
   final String? draftUrl;
   @override
-  @JsonKey(name: 'final_url')
+  @JsonKey(name: 'image_url', fromJson: _imageUrlFromJson)
   final String? finalUrl;
 
   @override
@@ -295,7 +295,8 @@ abstract class _Scene implements Scene {
     required final String shortSummary,
     @JsonKey(name: 'image_prompt') final String? imagePrompt,
     @JsonKey(name: 'draft_url') final String? draftUrl,
-    @JsonKey(name: 'final_url') final String? finalUrl,
+    @JsonKey(name: 'image_url', fromJson: _imageUrlFromJson)
+    final String? finalUrl,
   }) = _$SceneImpl;
 
   factory _Scene.fromJson(Map<String, dynamic> json) = _$SceneImpl.fromJson;
@@ -318,7 +319,7 @@ abstract class _Scene implements Scene {
   @JsonKey(name: 'draft_url')
   String? get draftUrl;
   @override
-  @JsonKey(name: 'final_url')
+  @JsonKey(name: 'image_url', fromJson: _imageUrlFromJson)
   String? get finalUrl;
 
   /// Create a copy of Scene

@@ -8,11 +8,11 @@ import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
 import '../../../core/presentation/widgets/cards/app_magic_card.dart';
-import '../../../core/presentation/widgets/buttons/app_fab.dart';
 import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../ui/components/asset_icon.dart';
 import '../../../features/books/data/book_providers.dart';
 import '../../../core/widgets/rounded_image.dart';
+import '../../../core/utils/text_style_helpers.dart';
 
 class HomeScreen extends HookConsumerWidget {
   const HomeScreen({super.key});
@@ -70,19 +70,6 @@ class HomeScreen extends HookConsumerWidget {
         backgroundColor: Colors.transparent,
         appBar: AppAppBar(
           title: 'StoryHero',
-          actions: [
-            IconButton(
-              icon: AssetIcon(
-                assetPath: AppIcons.profile,
-                size: 24,
-                color: AppColors.onBackground,
-              ),
-              onPressed: () {
-                debugPrint('[NAV] Home → /app/settings');
-                context.go(RouteNames.settings);
-              },
-            ),
-          ],
         ),
         body: FadeTransition(
           opacity: fadeAnimation,
@@ -96,12 +83,13 @@ class HomeScreen extends HookConsumerWidget {
                 // Приветствие
                 Text(
                   'Добро пожаловать!',
-                  style: AppTypography.headlineMedium,
+                  style: safeCopyWith(AppTypography.headlineMedium),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   'Что хотите сделать?',
-                  style: AppTypography.bodyLarge.copyWith(
+                  style: safeCopyWith(
+                    AppTypography.bodyLarge,
                     color: AppColors.onSurfaceVariant,
                   ),
                 ),
@@ -139,7 +127,8 @@ class HomeScreen extends HookConsumerWidget {
                                 const SizedBox(width: AppSpacing.xs),
                                 Text(
                                   'Создать книгу',
-                                  style: AppTypography.headlineSmall.copyWith(
+                                  style: safeCopyWith(
+                                    AppTypography.headlineSmall,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -148,7 +137,8 @@ class HomeScreen extends HookConsumerWidget {
                             const SizedBox(height: AppSpacing.xs),
                             Text(
                               'Персонализированная история для вашего ребёнка',
-                              style: AppTypography.bodySmall.copyWith(
+                              style: safeCopyWith(
+                                AppTypography.bodySmall,
                                 color: AppColors.onSurfaceVariant,
                               ),
                             ),
@@ -185,7 +175,8 @@ class HomeScreen extends HookConsumerWidget {
                                 child: Text(
                                   item.label,
                                   textAlign: TextAlign.center,
-                                  style: AppTypography.labelLarge.copyWith(
+                                  style: safeCopyWith(
+                                    AppTypography.labelLarge,
                                     fontWeight: FontWeight.bold,
                                   ),
                                   maxLines: 2,
@@ -216,7 +207,7 @@ class HomeScreen extends HookConsumerWidget {
                       children: [
                         Text(
                           'Недавние книги',
-                          style: AppTypography.headlineSmall,
+                          style: safeCopyWith(AppTypography.headlineSmall),
                         ),
                         const SizedBox(height: AppSpacing.md),
                         SizedBox(
@@ -228,6 +219,7 @@ class HomeScreen extends HookConsumerWidget {
                               final book = recentBooks[index];
                               return Container(
                                 width: 140,
+                                height: 200,
                                 margin: EdgeInsets.only(
                                   right: index < recentBooks.length - 1
                                       ? AppSpacing.md
@@ -237,6 +229,7 @@ class HomeScreen extends HookConsumerWidget {
                                   onTap: () => context.go(RouteNames.bookView.replaceAll(':id', book.id)),
                                   padding: EdgeInsets.zero,
                                   child: Column(
+                                    mainAxisSize: MainAxisSize.min,
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       // Обложка с фиксированным соотношением сторон
@@ -254,33 +247,34 @@ class HomeScreen extends HookConsumerWidget {
                                           ),
                                         ),
                                       ),
-                                      // Текстовая часть с достаточной высотой для предотвращения overflow
-                                      Padding(
-                                        padding: AppSpacing.paddingSM,
-                                        child: SizedBox(
-                                          height: 70, // Увеличена высота для предотвращения overflow
+                                      // Текстовая часть с гибкой высотой
+                                      Expanded(
+                                        child: Padding(
+                                          padding: AppSpacing.paddingSM,
                                           child: Column(
                                             mainAxisSize: MainAxisSize.min,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
                                             mainAxisAlignment: MainAxisAlignment.start,
                                             children: [
                                               Flexible(
                                                 child: Text(
                                                   book.title,
-                                                  style: AppTypography.labelLarge,
+                                                  style: safeCopyWith(AppTypography.labelLarge),
                                                   maxLines: 2,
                                                   overflow: TextOverflow.ellipsis,
+                                                  softWrap: true,
                                                 ),
                                               ),
                                               const SizedBox(height: AppSpacing.xs),
                                               Text(
                                                 'Книга',
-                                                style: AppTypography.bodySmall.copyWith(
+                                                style: safeCopyWith(
+                                                  AppTypography.bodySmall,
                                                   color: AppColors.onSurfaceVariant,
                                                 ),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
+                                                softWrap: false,
                                               ),
                                             ],
                                           ),
@@ -304,14 +298,6 @@ class HomeScreen extends HookConsumerWidget {
               ],
             ),
           ),
-        ),
-        floatingActionButton: AppFAB(
-          iconAsset: AppIcons.addBook,
-          tooltip: 'Создать книгу',
-          onPressed: () {
-            debugPrint('[NAV] Home → ${RouteNames.generate}');
-            context.go(RouteNames.generate);
-          },
         ),
       ),
     );

@@ -15,7 +15,7 @@ _$ChildImpl _$$ChildImplFromJson(Map<String, dynamic> json) => _$ChildImpl(
   character: json['character'] as String,
   moral: json['moral'] as String,
   faceUrl: json['face_url'] as String?,
-  photos: (json['photos'] as List<dynamic>?)?.map((e) => e as String).toList(),
+  photos: _photosFromJson(json['photos']),
 );
 
 Map<String, dynamic> _$$ChildImplToJson(_$ChildImpl instance) =>

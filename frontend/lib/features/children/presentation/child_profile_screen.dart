@@ -13,7 +13,8 @@ import '../../../core/widgets/magic/glassmorphic_card.dart';
 import '../../../ui/components/glowing_capsule_button.dart';
 import '../../../ui/components/asset_icon.dart';
 import '../../../ui/components/photo_preview_grid.dart';
-import '../state/child_photos_provider.dart';
+import '../data/child_photos_provider.dart';
+import '../../../core/models/child_photo.dart';
 
 final childProvider = FutureProvider.family<Child, String>((ref, childId) async {
   final api = ref.watch(backendApiProvider);
@@ -53,7 +54,6 @@ class ChildProfileScreen extends HookConsumerWidget {
     final fadeAnimation = useAnimationController(
       duration: const Duration(milliseconds: 600),
     );
-    final photosState = ref.watch(childPhotosProvider(childId));
 
     useEffect(() {
       fadeAnimation.forward();
@@ -233,8 +233,7 @@ class ChildProfileScreen extends HookConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 24),
-                          if (photosState.isNotEmpty || child.faceUrl != null)
-                            GlassmorphicCard(
+                          GlassmorphicCard(
                               padding: const EdgeInsets.all(24),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -373,8 +372,7 @@ class _PhotoGalleryWithAvatar extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isLoading = useState<bool>(false);
-    final photosState = ref.watch(childPhotosProvider(childId));
-    final photosNotifier = ref.read(childPhotosProvider(childId).notifier);
+    final photosAsync = ref.watch(childPhotosProvider(childId));
 
     Future<void> _handleAvatarSelection(String photoUrl) async {
       if (isLoading.value) return;
@@ -383,12 +381,15 @@ class _PhotoGalleryWithAvatar extends HookConsumerWidget {
 
       try {
         final api = ref.read(backendApiProvider);
-        await api.updateChild(
-          id: childId,
-          faceUrl: photoUrl,
+        await api.setChildAvatar(
+          childId: childId,
+          photoUrl: photoUrl,
         );
 
-        photosNotifier.setAvatar(photoUrl);
+        // КРИТИЧЕСКИ ВАЖНО: Инвалидируем оба провайдера
+        // API автоматически пересчитает is_avatar на основе нового face_url
+        ref.invalidate(childPhotosProvider(childId));
+        ref.invalidate(childProvider(childId));
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -476,21 +477,106 @@ class _PhotoGalleryWithAvatar extends HookConsumerWidget {
       );
     }
 
-    final displayPhotos = photosState.isNotEmpty 
-        ? photosState 
-        : (fallbackFaceUrl != null && fallbackFaceUrl!.isNotEmpty ? [fallbackFaceUrl!] : <String>[]);
-    final currentAvatar = displayPhotos.isNotEmpty ? displayPhotos.first : null;
-
-    return PhotoPreviewGrid(
-      existingPhotos: displayPhotos,
-      currentAvatarUrl: currentAvatar,
-      allowAvatarSelection: true,
-      onPhotoSelectedAsAvatar: (url) {
-        if (!isLoading.value) {
-          _showAvatarSelectionDialog(url);
+    return photosAsync.when(
+      data: (photosResponse) {
+        // Создаем копию списка фотографий для модификации
+        List<ChildPhoto> displayPhotos = List.from(photosResponse.photos);
+        
+        // Проверяем, есть ли уже аватар в списке
+        final hasAvatarInList = displayPhotos.any((photo) => photo.isAvatar);
+        
+        // Если список пуст или нет аватара, и есть face_url, добавляем fallback
+        // Также проверяем лимит в 5 фотографий
+        if ((displayPhotos.isEmpty || !hasAvatarInList) &&
+            fallbackFaceUrl != null &&
+            fallbackFaceUrl!.isNotEmpty &&
+            displayPhotos.length < 5) {
+          // Проверяем, что face_url не дублируется в списке
+          final faceUrlExists = displayPhotos.any((photo) => photo.url == fallbackFaceUrl);
+          
+          if (!faceUrlExists && fallbackFaceUrl != null && fallbackFaceUrl!.isNotEmpty) {
+            // Добавляем face_url как аватар в начало списка
+            final faceUrl = fallbackFaceUrl!; // Локальная переменная для промоушена типа
+            displayPhotos.insert(0, ChildPhoto(
+              url: faceUrl,
+              filename: 'avatar.jpg',
+              isAvatar: true,
+            ));
+          }
         }
+        
+        // Если после всех проверок список все еще пуст, показываем placeholder
+        if (displayPhotos.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.grey[200]?.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.photo_outlined, size: 48, color: Colors.white.withOpacity(0.5)),
+                const SizedBox(height: 8),
+                Text(
+                  'Нет фотографий',
+                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                ),
+              ],
+            ),
+          );
+        }
+        
+        // Преобразуем ChildPhoto в список URL для PhotoPreviewGrid
+        final displayPhotoUrls = displayPhotos.map((photo) => photo.url).toList();
+        // Находим аватар (is_avatar: true) или используем первую фотографию
+        final currentAvatar = displayPhotos.firstWhere(
+          (photo) => photo.isAvatar,
+          orElse: () => displayPhotos.first,
+        ).url;
+
+        return PhotoPreviewGrid(
+          existingPhotos: displayPhotoUrls,
+          currentAvatarUrl: currentAvatar,
+          fallbackFaceUrl: fallbackFaceUrl, // Передаем fallback URL для обработки ошибок
+          allowAvatarSelection: true,
+          onPhotoSelectedAsAvatar: (url) {
+            if (!isLoading.value) {
+              _showAvatarSelectionDialog(url);
+            }
+          },
+          maxPhotos: 5,
+        );
       },
-      maxPhotos: 5,
+      loading: () => const Center(
+        child: CircularProgressIndicator(),
+      ),
+      error: (error, stack) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Colors.red[400]),
+            const SizedBox(height: 8),
+            Text(
+              'Не удалось загрузить фотографии',
+              style: TextStyle(color: Colors.red[600]),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                ref.invalidate(childPhotosProvider(childId));
+              },
+              child: const Text('Повторить'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

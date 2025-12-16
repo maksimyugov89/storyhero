@@ -19,6 +19,7 @@ class RoundedImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Обрабатываем null и пустую строку - показываем placeholder
     if (imageUrl == null || imageUrl!.isEmpty) {
       return Container(
         width: width,

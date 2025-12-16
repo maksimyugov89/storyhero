@@ -10,7 +10,6 @@ import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
 import '../../../core/presentation/widgets/cards/app_magic_card.dart';
-import '../../../core/presentation/widgets/buttons/app_fab.dart';
 import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../core/widgets/error_widget.dart';
 import '../../../core/widgets/loading_widget.dart';
@@ -182,16 +181,22 @@ class ChildrenListScreen extends HookConsumerWidget {
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   child.name,
                                   style: AppTypography.headlineSmall,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: false,
                                 ),
                                 Text(
                                   '${child.age} лет',
                                   style: AppTypography.bodyMedium.copyWith(
                                     color: AppColors.onSurfaceVariant,
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),
@@ -247,11 +252,6 @@ class ChildrenListScreen extends HookConsumerWidget {
               onRetry: () => ref.refresh(childrenProvider),
             ),
           ),
-        ),
-        floatingActionButton: AppFAB(
-          iconAsset: AppIcons.addBook,
-          tooltip: 'Добавить ребёнка',
-          onPressed: () => context.push(RouteNames.childrenNew),
         ),
       ),
     );

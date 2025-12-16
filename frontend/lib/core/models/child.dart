@@ -14,7 +14,7 @@ class Child with _$Child {
     required String character,
     required String moral,
     @JsonKey(name: 'face_url') String? faceUrl,
-    @JsonKey(name: 'photos') List<String>? photos,
+    @JsonKey(name: 'photos', fromJson: _photosFromJson) List<String>? photos,
   }) = _Child;
 
   factory Child.fromJson(Map<String, dynamic> json) => _$ChildFromJson(json);
@@ -39,5 +39,30 @@ String _idToString(dynamic value) {
   final result = value.toString();
   print('[Child] _idToString: ${value.runtimeType}($value) -> String("$result")');
   return result;
+}
+
+List<String>? _photosFromJson(dynamic value) {
+  if (value == null) {
+    return null;
+  }
+  
+  if (value is List) {
+    return value.map((e) {
+      if (e is String) {
+        return e;
+      }
+      if (e is Map<String, dynamic>) {
+        // Backend возвращает массив объектов {url: "...", filename: "...", is_avatar: ...}
+        // Извлекаем url из каждого объекта
+        final url = e['url'] as String?;
+        if (url != null && url.isNotEmpty) {
+          return url;
+        }
+      }
+      return e.toString();
+    }).where((url) => url.isNotEmpty).toList();
+  }
+  
+  return null;
 }
 

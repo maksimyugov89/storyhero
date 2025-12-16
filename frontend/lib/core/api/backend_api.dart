@@ -4,6 +4,7 @@ import 'dart:io' if (dart.library.html) 'dart:html' as io;
 import 'package:path/path.dart' as path;
 import 'api_client.dart';
 import '../models/child.dart';
+import '../models/child_photo.dart';
 import '../utils/image_compressor.dart';
 import '../models/book.dart';
 import '../models/scene.dart';
@@ -635,6 +636,60 @@ class BackendApi {
     }
   }
 
+  /// Получает все фотографии ребенка
+  /// GET /children/{child_id}/photos
+  /// 
+  /// Параметры:
+  /// - childId: ID ребенка
+  /// 
+  /// Возвращает ChildPhotosResponse с массивом фотографий (до 5)
+  Future<ChildPhotosResponse> getChildPhotos(String childId) async {
+    try {
+      print('[BackendApi] getChildPhotos: Загрузка фотографий для ребенка $childId');
+      
+      final response = await _dio.get('/children/$childId/photos');
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+        final photosResponse = ChildPhotosResponse.fromJson(data);
+        
+        print('[BackendApi] getChildPhotos: Загружено ${photosResponse.photos.length} фотографий');
+        
+        return photosResponse;
+      }
+      
+      // Если ответ пустой или неожиданный формат, возвращаем пустой список
+      print('[BackendApi] getChildPhotos: Неожиданный формат ответа, возвращаем пустой список');
+      return ChildPhotosResponse(
+        childId: childId,
+        photos: [],
+      );
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      
+      // 404 - ребенок не найден или нет фотографий
+      if (statusCode == 404) {
+        print('[BackendApi] getChildPhotos: Ребенок не найден или нет фотографий (404)');
+        return ChildPhotosResponse(
+          childId: childId,
+          photos: [],
+        );
+      }
+      
+      // 401 - требуется авторизация
+      if (statusCode == 401) {
+        print('[BackendApi] getChildPhotos: Требуется авторизация (401)');
+        throw Exception('Требуется авторизация. Пожалуйста, войдите в аккаунт заново.');
+      }
+      
+      print('[BackendApi] getChildPhotos: Ошибка загрузки фотографий - статус: $statusCode');
+      rethrow;
+    } catch (e) {
+      print('[BackendApi] getChildPhotos: Неожиданная ошибка: $e');
+      rethrow;
+    }
+  }
+
   /// Устанавливает главное фото (avatar) для ребенка
   /// PUT /children/{child_id}/photos/avatar
   /// 
@@ -642,8 +697,8 @@ class BackendApi {
   /// - childId: ID ребенка
   /// - photoUrl: URL фотографии, которую нужно сделать главной
   /// 
-  /// Возвращает обновленный Child с новым faceUrl
-  Future<Child> setChildAvatar({
+  /// Возвращает void, так как после успешного ответа нужно инвалидировать провайдеры
+  Future<void> setChildAvatar({
     required String childId,
     required String photoUrl,
   }) async {
@@ -659,13 +714,12 @@ class BackendApi {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = response.data as Map<String, dynamic>;
-        final updatedChild = Child.fromJson(responseData);
-        
         print('[ChildAvatar] set avatar success: $photoUrl');
-        print('[BackendApi] setChildAvatar: Avatar успешно установлен, новый faceUrl: ${updatedChild.faceUrl}');
+        print('[BackendApi] setChildAvatar: Avatar успешно установлен');
         
-        return updatedChild;
+        // Не пытаемся парсить ответ, так как API может не возвращать полный Child
+        // Вместо этого инвалидируем провайдеры в UI
+        return;
       }
       
       throw Exception('Не удалось установить avatar: статус ${response.statusCode}');

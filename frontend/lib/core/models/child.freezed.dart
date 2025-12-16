@@ -31,7 +31,7 @@ mixin _$Child {
   String get moral => throw _privateConstructorUsedError;
   @JsonKey(name: 'face_url')
   String? get faceUrl => throw _privateConstructorUsedError;
-  @JsonKey(name: 'photos')
+  @JsonKey(name: 'photos', fromJson: _photosFromJson)
   List<String>? get photos => throw _privateConstructorUsedError;
 
   /// Serializes this Child to a JSON map.
@@ -57,7 +57,7 @@ abstract class $ChildCopyWith<$Res> {
     String character,
     String moral,
     @JsonKey(name: 'face_url') String? faceUrl,
-    @JsonKey(name: 'photos') List<String>? photos,
+    @JsonKey(name: 'photos', fromJson: _photosFromJson) List<String>? photos,
   });
 }
 
@@ -147,7 +147,7 @@ abstract class _$$ChildImplCopyWith<$Res> implements $ChildCopyWith<$Res> {
     String character,
     String moral,
     @JsonKey(name: 'face_url') String? faceUrl,
-    @JsonKey(name: 'photos') List<String>? photos,
+    @JsonKey(name: 'photos', fromJson: _photosFromJson) List<String>? photos,
   });
 }
 
@@ -230,7 +230,8 @@ class _$ChildImpl implements _Child {
     required this.character,
     required this.moral,
     @JsonKey(name: 'face_url') this.faceUrl,
-    @JsonKey(name: 'photos') final List<String>? photos,
+    @JsonKey(name: 'photos', fromJson: _photosFromJson)
+    final List<String>? photos,
   }) : _photos = photos;
 
   factory _$ChildImpl.fromJson(Map<String, dynamic> json) =>
@@ -256,7 +257,7 @@ class _$ChildImpl implements _Child {
   final String? faceUrl;
   final List<String>? _photos;
   @override
-  @JsonKey(name: 'photos')
+  @JsonKey(name: 'photos', fromJson: _photosFromJson)
   List<String>? get photos {
     final value = _photos;
     if (value == null) return null;
@@ -327,7 +328,8 @@ abstract class _Child implements Child {
     required final String character,
     required final String moral,
     @JsonKey(name: 'face_url') final String? faceUrl,
-    @JsonKey(name: 'photos') final List<String>? photos,
+    @JsonKey(name: 'photos', fromJson: _photosFromJson)
+    final List<String>? photos,
   }) = _$ChildImpl;
 
   factory _Child.fromJson(Map<String, dynamic> json) = _$ChildImpl.fromJson;
@@ -351,7 +353,7 @@ abstract class _Child implements Child {
   @JsonKey(name: 'face_url')
   String? get faceUrl;
   @override
-  @JsonKey(name: 'photos')
+  @JsonKey(name: 'photos', fromJson: _photosFromJson)
   List<String>? get photos;
 
   /// Create a copy of Child
