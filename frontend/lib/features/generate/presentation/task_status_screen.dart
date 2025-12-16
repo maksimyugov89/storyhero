@@ -10,6 +10,7 @@ import '../../../../core/presentation/layouts/app_page.dart';
 import '../../../../core/presentation/design_system/app_colors.dart';
 import '../../../../core/presentation/design_system/app_typography.dart';
 import '../../../../core/presentation/design_system/app_spacing.dart';
+import '../../../../core/utils/text_style_helpers.dart';
 import '../../../../core/presentation/widgets/feedback/app_loader.dart';
 import '../../../../core/presentation/widgets/feedback/app_progress_bar.dart';
 import '../../../../core/presentation/widgets/feedback/app_step_list.dart';
@@ -37,7 +38,12 @@ class TaskStatusScreen extends ConsumerStatefulWidget {
 }
 
 class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
+  // Константы для таймаутов и polling
+  static const Duration _maxGenerationTime = Duration(minutes: 15);
+  static const Duration _pollingInterval = Duration(seconds: 3);
+  
   Timer? _pollingTimer;
+  Timer? _timeUpdateTimer; // Таймер для обновления индикатора времени
   DateTime? _pollingStart;
   bool _isTimedOut = false;
   bool _isDisposed = false;
@@ -52,6 +58,8 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
     _isDisposed = true;
     _pollingTimer?.cancel();
     _pollingTimer = null;
+    _timeUpdateTimer?.cancel();
+    _timeUpdateTimer = null;
     super.dispose();
   }
 
@@ -64,18 +72,42 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
     _navigated = false;
     _lockUnlocked = false;
 
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+    _pollingTimer = Timer.periodic(_pollingInterval, (timer) {
       if (_isDisposed || !mounted) {
         timer.cancel();
         return;
+      }
+
+      // Проверяем текущий статус задачи перед продолжением polling
+      // Не продолжаем polling, если задача завершилась с ошибкой
+      try {
+        final currentTaskAsync = ref.read(taskStatusProvider(widget.taskId));
+        if (currentTaskAsync.hasValue && currentTaskAsync.value != null) {
+          final currentTask = currentTaskAsync.value!;
+          // Не продолжаем polling, если задача завершилась с ошибкой
+          if (currentTask.status == 'error' || currentTask.status == 'failed' || 
+              (currentTask.error != null && currentTask.error!.isNotEmpty)) {
+            timer.cancel();
+            _timeUpdateTimer?.cancel();
+            if (!_isDisposed && mounted) {
+              _unlockGeneration();
+            }
+            return;
+          }
+        }
+      } catch (e) {
+        // Игнорируем ошибки при чтении статуса в polling
+        // Продолжаем polling, если не можем прочитать статус
       }
 
       final elapsed = _pollingStart != null
           ? DateTime.now().difference(_pollingStart!)
           : Duration.zero;
 
-      if (elapsed > const Duration(minutes: 7)) {
+      // Проверка таймаута (15 минут)
+      if (elapsed > _maxGenerationTime) {
         timer.cancel();
+        _timeUpdateTimer?.cancel();
         if (!_isDisposed && mounted) {
           setState(() {
             _isTimedOut = true;
@@ -93,11 +125,25 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
         ref.invalidate(taskStatusProvider(widget.taskId));
       }
     });
+    
+    // Запускаем таймер для обновления индикатора времени каждую секунду
+    _timeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_isDisposed || !mounted) {
+        timer.cancel();
+        return;
+      }
+      // Обновляем UI для показа времени
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   void _stopPolling() {
     _pollingTimer?.cancel();
     _pollingTimer = null;
+    _timeUpdateTimer?.cancel();
+    _timeUpdateTimer = null;
   }
 
   void _unlockGeneration() {
@@ -109,6 +155,43 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
 
   void _handleTaskStateChange(TaskStatus? previous, TaskStatus current) {
     if (_isDisposed || !mounted) return;
+
+    // ПРОВЕРКА 1: Ошибка в задаче
+    // ВАЖНО: Проверяем error ПЕРЕД проверкой result
+    // Если error !== null, считаем задачу завершенной с ошибкой
+    if (current.error != null && current.error!.isNotEmpty) {
+      // Задача завершена с ошибкой - останавливаем polling
+      _stopPolling();
+      if (!_lockUnlocked) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_isDisposed && mounted) {
+            _unlockGeneration();
+          }
+        });
+      }
+      return;
+    }
+
+    // ПРОВЕРКА 2: Таймаут генерации
+    if (_pollingStart != null) {
+      final elapsed = DateTime.now().difference(_pollingStart!);
+      final currentStatus = current.status;
+      if (elapsed > _maxGenerationTime && currentStatus == 'running') {
+        // Превышено время ожидания - останавливаем polling
+        _stopPolling();
+        if (!_lockUnlocked) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!_isDisposed && mounted) {
+              setState(() {
+                _isTimedOut = true;
+              });
+              _unlockGeneration();
+            }
+          });
+        }
+        return;
+      }
+    }
 
     final currentStep = current.generationStatus.step;
     final currentStatus = current.status;
@@ -123,34 +206,50 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
       _lastStatus = currentStatus;
     }
 
-    if ((currentStatus == 'completed' || currentStep == BookGenerationStep.done) && 
-        current.bookId != null && 
-        !_navigated) {
+    // При получении status: "error" сразу обновляем UI и останавливаем polling
+    if (currentStatus == 'error' || currentStatus == 'failed') {
       _stopPolling();
-      _navigated = true;
-      
-      final bookId = current.bookId;
-      
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_isDisposed || !mounted || bookId == null) return;
-        _unlockGeneration();
-        Future.delayed(const Duration(milliseconds: 800), () {
-          if (!_isDisposed && mounted && bookId != null) {
-            context.go(RouteNames.bookView.replaceAll(':id', bookId));
+      if (!_lockUnlocked) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_isDisposed && mounted) {
+            _unlockGeneration();
           }
         });
-      });
+      }
       return;
     }
 
-    if ((currentStatus == 'failed' || currentStatus == 'error') && !_lockUnlocked) {
-      _stopPolling();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_isDisposed && mounted) {
+    // Переходим к книге сразу после получения book_id, даже если изображения еще не готовы
+    // Это позволяет показывать книгу с placeholder для изображений
+    if (current.bookId != null && !_navigated) {
+      // Проверяем, можно ли переходить к книге
+      // Переходим если статус success/completed или если есть хотя бы текст (step >= text)
+      final canNavigate = current.bookId != null &&
+                          (currentStatus == 'success' ||
+                           currentStatus == 'completed' ||
+                           currentStep == BookGenerationStep.done ||
+                           currentStep == BookGenerationStep.text ||
+                           currentStep == BookGenerationStep.prompts ||
+                           currentStep == BookGenerationStep.draftImages ||
+                           currentStep == BookGenerationStep.finalImages);
+      
+      if (canNavigate) {
+        _stopPolling();
+        _navigated = true;
+        
+        final bookId = current.bookId;
+        
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_isDisposed || !mounted || bookId == null) return;
           _unlockGeneration();
-        }
-      });
-      return;
+          Future.delayed(const Duration(milliseconds: 800), () {
+            if (!_isDisposed && mounted && bookId != null) {
+              context.go(RouteNames.bookView.replaceAll(':id', bookId));
+            }
+          });
+        });
+        return;
+      }
     }
   }
 
@@ -218,6 +317,12 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
     }
     
     return null;
+  }
+
+  String _getMinutesText(int minutes) {
+    if (minutes == 1) return 'минута';
+    if (minutes >= 2 && minutes <= 4) return 'минуты';
+    return 'минут';
   }
 
   List<StepItem> _getSteps(TaskStatus task) {
@@ -322,10 +427,56 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
               },
             ),
           ),
-          body: ErrorDisplayWidget(
-            customMessage: 'Время ожидания генерации истекло. Попробуйте позже.',
-            onRetry: _handleRetry,
-            onExit: _handleExit,
+          body: Center(
+            child: Padding(
+              padding: AppSpacing.paddingMD,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AssetIcon(
+                    assetPath: AppIcons.alert,
+                    size: 64,
+                    color: AppColors.error,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    'Превышено время ожидания',
+                    style: safeCopyWith(
+                      AppTypography.headlineMedium,
+                      color: AppColors.error,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Container(
+                    padding: AppSpacing.paddingMD,
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Генерация заняла слишком много времени (более 15 минут). Пожалуйста, попробуйте создать книгу снова.',
+                      style: safeCopyWith(
+                        AppTypography.bodyMedium,
+                        color: AppColors.error,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                  AppButton(
+                    text: 'Повторить',
+                    onPressed: _handleRetry,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppButton(
+                    text: 'Выйти',
+                    outlined: true,
+                    onPressed: _handleExit,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       );
@@ -387,14 +538,16 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                     const SizedBox(height: AppSpacing.xl),
                     Text(
                       'Книга создана!',
-                      style: AppTypography.headlineLarge.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.headlineLarge,
                         color: AppColors.success,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.md),
                     Text(
                       'Переходим к просмотру...',
-                      style: AppTypography.bodyLarge.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.bodyLarge,
                         color: AppColors.onSurfaceVariant,
                       ),
                     ),
@@ -403,11 +556,26 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
               );
             }
 
-            if (task.status == 'failed' || task.status == 'error') {
-              final errorMessage = task.error?.trim();
-              final displayMessage = errorMessage != null && errorMessage.isNotEmpty
-                  ? errorMessage
-                  : 'Произошла ошибка при генерации книги. Пожалуйста, попробуйте ещё раз.';
+            // ВАЖНО: Проверяем error ПЕРЕД проверкой result
+            // Если error !== null, считаем задачу завершенной с ошибкой
+            if (task.error != null && task.error!.isNotEmpty) {
+              final errorMessage = task.error!.trim();
+              String displayMessage;
+              
+              // Парсим сообщение об ошибке для разных типов ошибок
+              if (errorMessage.contains('502') || 
+                  errorMessage.contains('504') ||
+                  errorMessage.contains('Pollinations.ai') ||
+                  errorMessage.toLowerCase().contains('pollinations')) {
+                displayMessage = 'Сервис генерации изображений временно недоступен. Попробуйте через несколько минут.';
+              } else if (errorMessage.toLowerCase().contains('timeout') ||
+                         errorMessage.toLowerCase().contains('таймаут') ||
+                         errorMessage.toLowerCase().contains('превышено')) {
+                displayMessage = 'Генерация заняла слишком много времени. Попробуйте создать книгу снова.';
+              } else {
+                // Показываем оригинальное сообщение от сервера
+                displayMessage = errorMessage;
+              }
               
               return Center(
                 child: Padding(
@@ -423,7 +591,8 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                       const SizedBox(height: AppSpacing.lg),
                       Text(
                         'Ошибка генерации',
-                        style: AppTypography.headlineMedium.copyWith(
+                        style: safeCopyWith(
+                          AppTypography.headlineMedium,
                           color: AppColors.error,
                         ),
                         textAlign: TextAlign.center,
@@ -437,7 +606,79 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                         ),
                         child: Text(
                           displayMessage,
-                          style: AppTypography.bodyMedium.copyWith(
+                          style: safeCopyWith(
+                            AppTypography.bodyMedium,
+                            color: AppColors.error,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      AppButton(
+                        text: 'Повторить',
+                        onPressed: _handleRetry,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      AppButton(
+                        text: 'Выйти',
+                        outlined: true,
+                        onPressed: _handleExit,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            // Проверяем status: "error" или "failed"
+            if (task.status == 'failed' || task.status == 'error') {
+              final errorMessage = task.error?.trim();
+              String displayMessage;
+              
+              if (errorMessage != null && errorMessage.isNotEmpty) {
+                // Парсим сообщение об ошибке для 502/Pollinations.ai
+                if (errorMessage.contains('502') || 
+                    errorMessage.contains('Pollinations.ai') ||
+                    errorMessage.toLowerCase().contains('pollinations')) {
+                  displayMessage = 'Сервис генерации изображений временно недоступен. Попробуйте позже.';
+                } else {
+                  displayMessage = errorMessage;
+                }
+              } else {
+                displayMessage = 'Произошла ошибка при генерации книги. Пожалуйста, попробуйте ещё раз.';
+              }
+              
+              return Center(
+                child: Padding(
+                  padding: AppSpacing.paddingMD,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AssetIcon(
+                        assetPath: AppIcons.alert,
+                        size: 64,
+                        color: AppColors.error,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        'Ошибка генерации',
+                        style: safeCopyWith(
+                          AppTypography.headlineMedium,
+                          color: AppColors.error,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Container(
+                        padding: AppSpacing.paddingMD,
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          displayMessage,
+                          style: safeCopyWith(
+                            AppTypography.bodyMedium,
                             color: AppColors.error,
                           ),
                           textAlign: TextAlign.center,
@@ -464,6 +705,14 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
             final progress = _getProgress(task);
             final steps = _getSteps(task);
             final currentStepIndex = _getCurrentStepIndex(task);
+            
+            // Вычисляем прошедшее и оставшееся время
+            final elapsed = _pollingStart != null
+                ? DateTime.now().difference(_pollingStart!)
+                : Duration.zero;
+            final elapsedMinutes = elapsed.inMinutes;
+            final estimatedTotalMinutes = 10;
+            final remainingMinutes = (estimatedTotalMinutes - elapsedMinutes).clamp(0, estimatedTotalMinutes);
 
             return SingleChildScrollView(
               padding: AppSpacing.paddingMD,
@@ -491,7 +740,8 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                   // Текущий этап с деталями
                   Text(
                     task.generationStatus.step.displayName,
-                    style: AppTypography.bodyLarge.copyWith(
+                    style: safeCopyWith(
+                      AppTypography.bodyLarge,
                       color: AppColors.primary,
                       fontWeight: FontWeight.w600,
                     ),
@@ -502,7 +752,8 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       _getDetailedProgressMessage(task)!,
-                      style: AppTypography.bodyMedium.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.bodyMedium,
                         color: AppColors.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
@@ -527,11 +778,36 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                   
                   const SizedBox(height: AppSpacing.lg),
                   
-                  // Оценка времени
-                  Text(
-                    'Примерно ${(7 - (DateTime.now().difference(_pollingStart ?? DateTime.now()).inMinutes)).clamp(0, 7)} минут',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: AppColors.onSurfaceVariant,
+                  // Индикатор времени
+                  Container(
+                    padding: AppSpacing.paddingSM,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Генерация может занять до 10 минут',
+                          style: safeCopyWith(
+                            AppTypography.bodySmall,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          elapsedMinutes > 0
+                              ? 'Прошло: $elapsedMinutes ${_getMinutesText(elapsedMinutes)}${remainingMinutes > 0 ? ' • Осталось: ~$remainingMinutes ${_getMinutesText(remainingMinutes)}' : ''}'
+                              : 'Начинаем генерацию...',
+                          style: safeCopyWith(
+                            AppTypography.bodyMedium,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   ),
                   

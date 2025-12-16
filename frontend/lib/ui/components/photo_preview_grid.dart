@@ -17,6 +17,7 @@ class PhotoPreviewGrid extends StatefulWidget {
   final Function(String)? onPhotoSelectedAsAvatar; // Callback для выбора аватарки (URL)
   final Function(PhotoFile)? onLocalPhotoSelectedAsAvatar; // Callback для выбора аватарки (локальный файл)
   final String? currentAvatarUrl; // URL текущей аватарки
+  final String? fallbackFaceUrl; // Fallback face_url для обработки ошибок
   final int maxPhotos;
   final bool allowAvatarSelection; // Разрешить выбор аватарки
 
@@ -29,6 +30,7 @@ class PhotoPreviewGrid extends StatefulWidget {
     this.onPhotoSelectedAsAvatar,
     this.onLocalPhotoSelectedAsAvatar,
     this.currentAvatarUrl,
+    this.fallbackFaceUrl,
     this.maxPhotos = 5,
     this.allowAvatarSelection = false,
   });
@@ -237,7 +239,16 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
                                 ),
                               ),
                               errorWidget: (context, url, error) {
-                                // Тихая обработка ошибки
+                                // Если это fallback аватар и он недоступен, скрываем его
+                                final isFallbackAvatar = widget.fallbackFaceUrl != null &&
+                                    url == widget.fallbackFaceUrl;
+                                
+                                if (isFallbackAvatar) {
+                                  // Не показываем недоступный fallback - возвращаем пустой виджет
+                                  return const SizedBox.shrink();
+                                }
+                                
+                                // Для обычных фотографий показываем иконку ошибки
                                 return Container(
                                   color: primaryColor.withOpacity(0.1),
                                   child: Icon(

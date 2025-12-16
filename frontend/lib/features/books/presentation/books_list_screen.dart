@@ -7,6 +7,7 @@ import '../../../core/presentation/layouts/app_page.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
+import '../../../core/utils/text_style_helpers.dart';
 import '../../../core/presentation/widgets/cards/app_magic_card.dart';
 import '../../../core/presentation/widgets/buttons/app_fab.dart';
 import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
@@ -123,14 +124,16 @@ class BooksListScreen extends HookConsumerWidget {
                                 : selectedFilter.value == BookFilter.drafts
                                     ? 'Нет черновиков'
                                     : 'Нет готовых книг',
-                            style: AppTypography.headlineSmall.copyWith(
+                            style: safeCopyWith(
+                              AppTypography.headlineSmall,
                               color: AppColors.onSurfaceVariant,
                             ),
                           ),
                           const SizedBox(height: AppSpacing.sm),
                           Text(
                             'Создайте первую книгу',
-                            style: AppTypography.bodyMedium.copyWith(
+                            style: safeCopyWith(
+                              AppTypography.bodyMedium,
                               color: AppColors.onSurfaceVariant,
                             ),
                           ),
@@ -212,7 +215,8 @@ class BooksListScreen extends HookConsumerWidget {
                                     Flexible(
                                       child: Text(
                                         book.title,
-                                        style: AppTypography.labelLarge.copyWith(
+                                        style: safeCopyWith(
+                                          AppTypography.labelLarge,
                                           fontWeight: FontWeight.bold,
                                         ),
                                         maxLines: 2,
@@ -222,7 +226,8 @@ class BooksListScreen extends HookConsumerWidget {
                                     const SizedBox(height: AppSpacing.xs),
                                     Text(
                                       'Книга',
-                                      style: AppTypography.bodySmall.copyWith(
+                                      style: safeCopyWith(
+                                        AppTypography.bodySmall,
                                         color: AppColors.onSurfaceVariant,
                                       ),
                                       maxLines: 1,
@@ -253,7 +258,8 @@ class BooksListScreen extends HookConsumerWidget {
                         const SizedBox(height: AppSpacing.lg),
                         Text(
                           'Ошибка загрузки книг',
-                          style: AppTypography.headlineSmall.copyWith(
+                          style: safeCopyWith(
+                            AppTypography.headlineSmall,
                             color: AppColors.error,
                           ),
                         ),
@@ -300,7 +306,7 @@ class _FilterChip extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected
               ? AppColors.primary
@@ -314,6 +320,7 @@ class _FilterChip extends StatelessWidget {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
               AssetIcon(
@@ -325,15 +332,21 @@ class _FilterChip extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.xs),
             ],
-            Text(
-              label,
-              style: AppTypography.labelMedium.copyWith(
-                color: isSelected
-                    ? AppColors.onPrimary
-                    : AppColors.onSurfaceVariant,
-                fontWeight: isSelected
-                    ? FontWeight.bold
-                    : FontWeight.normal,
+            Flexible(
+              child: Text(
+                label,
+                style: safeCopyWith(
+                  AppTypography.labelMedium,
+                  color: isSelected
+                      ? AppColors.onPrimary
+                      : AppColors.onSurfaceVariant,
+                  fontWeight: isSelected
+                      ? FontWeight.bold
+                      : FontWeight.normal,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
             ),
           ],

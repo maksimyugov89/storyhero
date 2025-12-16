@@ -13,7 +13,7 @@ _$SceneImpl _$$SceneImplFromJson(Map<String, dynamic> json) => _$SceneImpl(
   shortSummary: _shortSummaryFromJson(json['short_summary']),
   imagePrompt: json['image_prompt'] as String?,
   draftUrl: json['draft_url'] as String?,
-  finalUrl: json['final_url'] as String?,
+  finalUrl: _imageUrlFromJson(json['image_url']),
 );
 
 Map<String, dynamic> _$$SceneImplToJson(_$SceneImpl instance) =>
@@ -24,5 +24,5 @@ Map<String, dynamic> _$$SceneImplToJson(_$SceneImpl instance) =>
       'short_summary': instance.shortSummary,
       'image_prompt': instance.imagePrompt,
       'draft_url': instance.draftUrl,
-      'final_url': instance.finalUrl,
+      'image_url': instance.finalUrl,
     };

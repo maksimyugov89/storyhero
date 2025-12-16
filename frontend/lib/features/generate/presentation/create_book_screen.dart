@@ -265,18 +265,24 @@ class CreateBookScreen extends HookConsumerWidget {
                             fullWidth: true,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 AssetIcon(
                                   assetPath: AppIcons.magicPortal,
-                                  size: 24,
+                                  size: 20,
                                   color: AppColors.onPrimary,
                                 ),
-                                const SizedBox(width: AppSpacing.sm),
-                                Text(
-                                  'Создать книгу',
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: AppColors.onPrimary,
-                                    fontWeight: FontWeight.bold,
+                                const SizedBox(width: AppSpacing.xs),
+                                Flexible(
+                                  child: Text(
+                                    'Создать книгу',
+                                    style: AppTypography.labelLarge.copyWith(
+                                      color: AppColors.onPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
                                   ),
                                 ),
                               ],
