@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../design_system/app_colors.dart';
 import '../../design_system/app_radius.dart';
 import '../../design_system/app_shadows.dart';
+import '../../../../core/utils/text_style_helpers.dart';
 
 /// Прогресс-бар с glow эффектом
 class AppProgressBar extends StatelessWidget {
@@ -26,9 +27,9 @@ class AppProgressBar extends StatelessWidget {
         if (label != null) ...[
           Text(
             label!,
-            style: TextStyle(
+            style: safeTextStyle(
               color: AppColors.onSurface,
-              fontSize: 14,
+              fontSize: 14.0,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -75,9 +76,9 @@ class AppProgressBar extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           '${(progress * 100).toInt()}%',
-          style: TextStyle(
+          style: safeTextStyle(
             color: AppColors.onSurfaceVariant,
-            fontSize: 12,
+            fontSize: 12.0,
           ),
         ),
       ],

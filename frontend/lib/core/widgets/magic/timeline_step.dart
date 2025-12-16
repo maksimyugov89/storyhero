@@ -97,24 +97,26 @@ class TimelineStep extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: (Theme.of(context).textTheme.titleMedium ?? 
-                        const TextStyle(fontSize: 18)).copyWith(
-                      color: isCompleted || isActive
-                          ? (isDark ? Colors.white : Colors.black87)
-                          : inactiveColor,
-                      fontWeight: isActive || isCompleted
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                    ),
+                style: safeCopyWith(
+                  Theme.of(context).textTheme.titleMedium,
+                  fontSize: 18.0,
+                  color: isCompleted || isActive
+                      ? (isDark ? Colors.white : Colors.black87)
+                      : inactiveColor,
+                  fontWeight: isActive || isCompleted
+                      ? FontWeight.bold
+                      : FontWeight.normal,
+                ),
               ),
               if (subtitle != null) ...[
                 const SizedBox(height: 4),
                 Text(
                   subtitle!,
-                  style: (Theme.of(context).textTheme.bodySmall ?? 
-                          const TextStyle(fontSize: 12)).copyWith(
-                        color: isActive || isCompleted
-                            ? (isDark ? Colors.white70 : Colors.black54)
+                  style: safeCopyWith(
+                    Theme.of(context).textTheme.bodySmall,
+                    fontSize: 12.0,
+                    color: isActive || isCompleted
+                        ? (isDark ? Colors.white70 : Colors.black54)
                             : inactiveColor,
                       ),
                 ),

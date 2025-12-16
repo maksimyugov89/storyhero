@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme_magic.dart';
 import 'asset_icon.dart';
+import '../../core/utils/text_style_helpers.dart';
 
 /// Градиентная кнопка Disney-стиля с анимированным свечением
 class GlowingCapsuleButton extends StatefulWidget {
@@ -179,9 +180,9 @@ class _GlowingCapsuleButtonState extends State<GlowingCapsuleButton>
                                   child: Text(
                                     widget.text,
                                     style: widget.textStyle ??
-                                        const TextStyle(
+                                        safeTextStyle(
                                           color: Colors.white,
-                                          fontSize: 16,
+                                          fontSize: 16.0,
                                           fontWeight: FontWeight.bold,
                                           letterSpacing: 0.5,
                                         ),

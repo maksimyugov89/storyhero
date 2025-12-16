@@ -7,6 +7,7 @@ import '../../../core/widgets/loading_widget.dart';
 import '../../../core/widgets/magic/glassmorphic_card.dart';
 import '../../../ui/components/glowing_capsule_button.dart';
 import '../../books/data/book_providers.dart';
+import '../../../core/utils/text_style_helpers.dart';
 
 class PaymentScreen extends ConsumerWidget {
   final String bookId;
@@ -76,10 +77,11 @@ class PaymentScreen extends ConsumerWidget {
                                 const SizedBox(height: 24),
                                 Text(
                                   book.title,
-                                  style: (Theme.of(context).textTheme.headlineSmall ?? 
-                                          const TextStyle(fontSize: 20)).copyWith(
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                  style: safeCopyWith(
+                                    Theme.of(context).textTheme.headlineSmall,
+                                    fontSize: 20.0,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                   textAlign: TextAlign.center,
                                 ),
                               ],
@@ -94,10 +96,11 @@ class PaymentScreen extends ConsumerWidget {
                               children: [
                                 Text(
                                   'Стоимость',
-                                  style: (Theme.of(context).textTheme.titleLarge ?? 
-                                          const TextStyle(fontSize: 22)).copyWith(
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                  style: safeCopyWith(
+                                    Theme.of(context).textTheme.titleLarge,
+                                    fontSize: 22.0,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                                 const SizedBox(height: 16),
                                 Row(
@@ -109,11 +112,12 @@ class PaymentScreen extends ConsumerWidget {
                                     ),
                                     Text(
                                       '499 ₽',
-                                      style: (Theme.of(context).textTheme.headlineSmall ?? 
-                                              const TextStyle(fontSize: 20)).copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: Theme.of(context).colorScheme.primary,
-                                          ),
+                                      style: safeCopyWith(
+                                        Theme.of(context).textTheme.headlineSmall,
+                                        fontSize: 20.0,
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -129,11 +133,12 @@ class PaymentScreen extends ConsumerWidget {
                                     ),
                                     Text(
                                       '499 ₽',
-                                      style: (Theme.of(context).textTheme.headlineMedium ?? 
-                                              const TextStyle(fontSize: 24)).copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: Theme.of(context).colorScheme.primary,
-                                          ),
+                                      style: safeCopyWith(
+                                        Theme.of(context).textTheme.headlineMedium,
+                                        fontSize: 24.0,
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -168,11 +173,14 @@ class PaymentScreen extends ConsumerWidget {
                           const SizedBox(height: 16),
                           Text(
                             'После оплаты вы получите доступ к финальной версии книги в высоком качестве',
-                            style: (Theme.of(context).textTheme.bodySmall ?? 
-                                    const TextStyle(fontSize: 12)).copyWith(
-                                  color: (Theme.of(context).textTheme.bodyMedium ?? 
-                                          const TextStyle(fontSize: 14)).color?.withOpacity(0.7),
-                                ),
+                            style: safeCopyWith(
+                              Theme.of(context).textTheme.bodySmall,
+                              fontSize: 12.0,
+                              color: safeCopyWith(
+                                Theme.of(context).textTheme.bodyMedium,
+                                fontSize: 14.0,
+                              ).color?.withOpacity(0.7),
+                            ),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 40),

@@ -7,6 +7,7 @@ import '../../../core/presentation/layouts/app_page.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
+import '../../../core/utils/text_style_helpers.dart';
 import '../../../core/presentation/widgets/inputs/app_text_field.dart';
 import '../../../core/presentation/widgets/buttons/app_button.dart';
 import '../../../core/presentation/widgets/buttons/app_magic_button.dart';
@@ -180,7 +181,8 @@ class LoginScreen extends HookConsumerWidget {
                     },
                     child: Text(
                       'Забыли пароль?',
-                      style: AppTypography.bodyMedium.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.bodyMedium,
                         color: AppColors.onSurfaceVariant,
                       ),
                     ),
@@ -208,7 +210,8 @@ class LoginScreen extends HookConsumerWidget {
                         Expanded(
                           child: Text(
                             errorMessage.value!,
-                            style: AppTypography.bodyMedium.copyWith(
+                            style: safeCopyWith(
+                              AppTypography.bodyMedium,
                               color: AppColors.error,
                             ),
                           ),
@@ -227,7 +230,8 @@ class LoginScreen extends HookConsumerWidget {
                   fullWidth: true,
                   child: Text(
                     'Войти',
-                    style: AppTypography.labelLarge.copyWith(
+                    style: safeCopyWith(
+                      AppTypography.labelLarge,
                       color: AppColors.onPrimary,
                       fontWeight: FontWeight.bold,
                     ),
@@ -244,7 +248,8 @@ class LoginScreen extends HookConsumerWidget {
                       padding: AppSpacing.paddingHMD,
                       child: Text(
                         'или',
-                        style: AppTypography.bodySmall.copyWith(
+                        style: safeCopyWith(
+                          AppTypography.bodySmall,
                           color: AppColors.onSurfaceVariant,
                         ),
                       ),

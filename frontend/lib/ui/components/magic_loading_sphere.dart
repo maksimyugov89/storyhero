@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme_magic.dart';
+import '../../core/utils/text_style_helpers.dart';
 
 /// Вращающийся светящийся шар с тремя кольцами - магический лоадер
 class MagicLoadingSphere extends StatefulWidget {
@@ -142,8 +143,9 @@ class _MagicLoadingSphereState extends State<MagicLoadingSphere>
           const SizedBox(height: 24),
           Text(
             widget.message!,
-            style: (Theme.of(context).textTheme.bodyLarge ?? 
-                    const TextStyle(fontSize: 16)).copyWith(
+            style: safeCopyWith(
+              Theme.of(context).textTheme.bodyLarge,
+              fontSize: 16.0,
                   color: Colors.white.withOpacity(0.9),
                   fontWeight: FontWeight.w500,
                 ),

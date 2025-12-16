@@ -8,6 +8,7 @@ import '../../../core/presentation/layouts/app_page.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
+import '../../../core/utils/text_style_helpers.dart';
 import '../../../core/presentation/widgets/feedback/app_loader.dart';
 import '../../../core/presentation/widgets/buttons/app_magic_button.dart';
 import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
@@ -172,14 +173,16 @@ class _FinalizationScreenState extends ConsumerState<FinalizationScreen> {
                     const SizedBox(height: AppSpacing.xl),
                     Text(
                       'Книга готова!',
-                      style: AppTypography.headlineLarge.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.headlineLarge,
                         color: AppColors.success,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.md),
                     Text(
                       'Переходим к просмотру...',
-                      style: AppTypography.bodyLarge.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.bodyLarge,
                         color: AppColors.onSurfaceVariant,
                       ),
                     ),
@@ -242,7 +245,8 @@ class _FinalizationScreenState extends ConsumerState<FinalizationScreen> {
                         const SizedBox(width: AppSpacing.sm),
                         Text(
                           'Подтвердить',
-                          style: AppTypography.labelLarge.copyWith(
+                          style: safeCopyWith(
+                            AppTypography.labelLarge,
                             color: AppColors.onPrimary,
                             fontWeight: FontWeight.bold,
                           ),

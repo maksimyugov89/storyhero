@@ -9,6 +9,7 @@ import '../../../core/presentation/layouts/app_page.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
+import '../../../core/utils/text_style_helpers.dart';
 import '../../../core/presentation/widgets/cards/app_magic_card.dart';
 import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../core/widgets/error_widget.dart';
@@ -124,7 +125,8 @@ class ChildrenListScreen extends HookConsumerWidget {
                       const SizedBox(height: AppSpacing.sm),
                       Text(
                         'Добавьте первого ребёнка',
-                        style: AppTypography.bodyMedium.copyWith(
+                        style: safeCopyWith(
+                          AppTypography.bodyMedium,
                           color: AppColors.onSurfaceVariant,
                         ),
                       ),
@@ -168,7 +170,8 @@ class ChildrenListScreen extends HookConsumerWidget {
                               child: Center(
                                 child: Text(
                                   child.name[0].toUpperCase(),
-                                  style: AppTypography.headlineSmall.copyWith(
+                                  style: safeCopyWith(
+                                    AppTypography.headlineSmall,
                                     color: AppColors.onPrimary,
                                   ),
                                 ),
@@ -192,7 +195,8 @@ class ChildrenListScreen extends HookConsumerWidget {
                                 ),
                                 Text(
                                   '${child.age} лет',
-                                  style: AppTypography.bodyMedium.copyWith(
+                                  style: safeCopyWith(
+                                    AppTypography.bodyMedium,
                                     color: AppColors.onSurfaceVariant,
                                   ),
                                   maxLines: 1,

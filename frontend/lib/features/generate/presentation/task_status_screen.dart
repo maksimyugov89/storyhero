@@ -234,12 +234,12 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                            currentStep == BookGenerationStep.finalImages);
       
       if (canNavigate) {
-        _stopPolling();
-        _navigated = true;
-        
-        final bookId = current.bookId;
-        
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+      _stopPolling();
+      _navigated = true;
+      
+      final bookId = current.bookId;
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_isDisposed || !mounted || bookId == null) return;
           _unlockGeneration();
           Future.delayed(const Duration(milliseconds: 800), () {
@@ -247,9 +247,9 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
               context.go(RouteNames.bookView.replaceAll(':id', bookId));
             }
           });
-        });
-        return;
-      }
+      });
+      return;
+    }
     }
   }
 
@@ -610,7 +610,7 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                             AppTypography.bodyMedium,
                             color: AppColors.error,
                           ),
-                          textAlign: TextAlign.center,
+                        textAlign: TextAlign.center,
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xl),
@@ -787,11 +787,11 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                     ),
                     child: Column(
                       children: [
-                        Text(
+                  Text(
                           'Генерация может занять до 10 минут',
                           style: safeCopyWith(
                             AppTypography.bodySmall,
-                            color: AppColors.onSurfaceVariant,
+                      color: AppColors.onSurfaceVariant,
                           ),
                           textAlign: TextAlign.center,
                         ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/utils/text_style_helpers.dart';
 
 class MagicInputField extends StatefulWidget {
   final TextEditingController? controller;
@@ -62,11 +63,12 @@ class _MagicInputFieldState extends State<MagicInputField>
         if (widget.label != null) ...[
           Text(
             widget.label!,
-            style: (Theme.of(context).textTheme.titleSmall ?? 
-                    const TextStyle(fontSize: 16)).copyWith(
-                  color: isDark ? Colors.white70 : Colors.black87,
-                  fontWeight: FontWeight.w500,
-                ),
+            style: safeCopyWith(
+              Theme.of(context).textTheme.titleSmall,
+              fontSize: 16.0,
+              color: isDark ? Colors.white70 : Colors.black87,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 8),
         ],

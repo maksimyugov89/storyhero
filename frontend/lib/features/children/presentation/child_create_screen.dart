@@ -9,6 +9,7 @@ import '../../../../core/presentation/layouts/app_page.dart';
 import '../../../../core/presentation/design_system/app_colors.dart';
 import '../../../../core/presentation/design_system/app_typography.dart';
 import '../../../../core/presentation/design_system/app_spacing.dart';
+import '../../../../core/utils/text_style_helpers.dart';
 import '../../../../core/presentation/widgets/inputs/app_text_field.dart';
 import '../../../../core/presentation/widgets/buttons/app_magic_button.dart';
 import '../../../../core/presentation/widgets/buttons/app_button.dart';
@@ -266,7 +267,8 @@ class ChildCreateScreen extends HookConsumerWidget {
                         Expanded(
                           child: Text(
                             errorMessage.value!,
-                            style: AppTypography.bodyMedium.copyWith(
+                            style: safeCopyWith(
+                              AppTypography.bodyMedium,
                               color: AppColors.error,
                             ),
                           ),
@@ -294,7 +296,8 @@ class ChildCreateScreen extends HookConsumerWidget {
                       const SizedBox(width: AppSpacing.sm),
                       Text(
                         'Создать',
-                        style: AppTypography.labelLarge.copyWith(
+                        style: safeCopyWith(
+                          AppTypography.labelLarge,
                           color: AppColors.onPrimary,
                           fontWeight: FontWeight.bold,
                         ),

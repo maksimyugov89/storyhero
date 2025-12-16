@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/utils/text_style_helpers.dart';
 
 class GlowingProgressBar extends StatefulWidget {
   final double progress; // 0.0 to 1.0
@@ -52,10 +53,11 @@ class _GlowingProgressBarState extends State<GlowingProgressBar>
         if (widget.label != null) ...[
           Text(
             widget.label!,
-            style: (Theme.of(context).textTheme.bodyMedium ?? 
-                    const TextStyle(fontSize: 14)).copyWith(
-                  color: isDark ? Colors.white70 : Colors.black87,
-                ),
+            style: safeCopyWith(
+              Theme.of(context).textTheme.bodyMedium,
+              fontSize: 14.0,
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
           ),
           const SizedBox(height: 8),
         ],

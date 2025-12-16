@@ -6,6 +6,7 @@ import '../../../core/presentation/layouts/app_page.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
+import '../../../core/utils/text_style_helpers.dart';
 import '../../../core/presentation/widgets/cards/app_magic_card.dart';
 import '../../../core/presentation/widgets/buttons/app_button.dart';
 import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
@@ -123,7 +124,8 @@ class SettingsScreen extends ConsumerWidget {
                         if (email == null) {
                           return Text(
                             'Не удалось загрузить email',
-                            style: AppTypography.bodyMedium.copyWith(
+                            style: safeCopyWith(
+                              AppTypography.bodyMedium,
                               color: AppColors.onSurfaceVariant,
                             ),
                           );
@@ -148,7 +150,8 @@ class SettingsScreen extends ConsumerWidget {
                       loading: () => const CircularProgressIndicator(),
                       error: (_, __) => Text(
                         'Ошибка загрузки email',
-                        style: AppTypography.bodyMedium.copyWith(
+                        style: safeCopyWith(
+                          AppTypography.bodyMedium,
                           color: AppColors.error,
                         ),
                       ),
@@ -253,7 +256,8 @@ class _SettingsItem extends StatelessWidget {
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       subtitle!,
-                      style: AppTypography.bodySmall.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.bodySmall,
                         color: AppColors.onSurfaceVariant,
                       ),
                     ),

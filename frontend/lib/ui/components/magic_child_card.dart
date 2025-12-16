@@ -3,6 +3,7 @@ import '../../core/models/child.dart';
 import '../../core/theme/app_theme_magic.dart';
 import '../../core/widgets/magic/glassmorphic_card.dart';
 import 'asset_icon.dart';
+import '../../core/utils/text_style_helpers.dart';
 
 /// Анимированная карточка ребёнка с фото-каруселью и действиями
 class MagicChildCard extends StatefulWidget {
@@ -127,8 +128,9 @@ class _MagicChildCardState extends State<MagicChildCard>
                         children: [
                           Text(
                             widget.child.name,
-                            style: (Theme.of(context).textTheme.headlineSmall ?? 
-                                    const TextStyle(fontSize: 20)).copyWith(
+                            style: safeCopyWith(
+                              Theme.of(context).textTheme.headlineSmall,
+                              fontSize: 20.0,
                                   fontWeight: FontWeight.bold,
                                 ),
                           ),
@@ -264,9 +266,9 @@ class _MagicChildCardState extends State<MagicChildCard>
         child: Center(
           child: Text(
             widget.child.name[0].toUpperCase(),
-            style: const TextStyle(
+            style: safeTextStyle(
               color: Colors.white,
-              fontSize: 48,
+              fontSize: 48.0,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -335,8 +337,8 @@ class _MagicChildCardState extends State<MagicChildCard>
           const SizedBox(height: 4),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 10,
+            style: safeTextStyle(
+              fontSize: 10.0,
               color: color,
               fontWeight: FontWeight.w500,
             ),

@@ -60,8 +60,9 @@ class _GoldenRunicSpinnerState extends State<GoldenRunicSpinner>
           const SizedBox(height: 16),
           Text(
             widget.message!,
-            style: (Theme.of(context).textTheme.bodyMedium ?? 
-                    const TextStyle(fontSize: 14)).copyWith(
+            style: safeCopyWith(
+              Theme.of(context).textTheme.bodyMedium,
+              fontSize: 14.0,
                   color: const Color(0xFFFFD93D).withOpacity(0.9),
                   fontWeight: FontWeight.w500,
                 ),

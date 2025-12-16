@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/models/book_generation_step.dart';
 import 'asset_icon.dart';
+import '../../core/utils/text_style_helpers.dart';
 
 /// Индикатор прогресса этапов генерации книги
 class StepProgressIndicator extends StatelessWidget {
@@ -41,8 +42,9 @@ class StepProgressIndicator extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: (Theme.of(context).textTheme.titleMedium ?? 
-                          const TextStyle(fontSize: 18)).copyWith(
+                  style: safeCopyWith(
+                    Theme.of(context).textTheme.titleMedium,
+                    fontSize: 18.0,
                     fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                     color: isActive
                         ? Theme.of(context).colorScheme.primary
@@ -55,8 +57,9 @@ class StepProgressIndicator extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     subtitle!,
-                    style: (Theme.of(context).textTheme.bodySmall ?? 
-                            const TextStyle(fontSize: 12)).copyWith(
+                    style: safeCopyWith(
+                      Theme.of(context).textTheme.bodySmall,
+                      fontSize: 12.0,
                       color: Colors.grey[600],
                     ),
                   ),
@@ -219,8 +222,9 @@ class StepProgressList extends StatelessWidget {
                     ),
                     Text(
                       '${progress!.toInt()}%',
-                      style: (Theme.of(context).textTheme.titleSmall ?? 
-                              const TextStyle(fontSize: 16)).copyWith(
+                      style: safeCopyWith(
+                        Theme.of(context).textTheme.titleSmall,
+                        fontSize: 16.0,
                         fontWeight: FontWeight.bold,
                         color: Theme.of(context).colorScheme.primary,
                       ),

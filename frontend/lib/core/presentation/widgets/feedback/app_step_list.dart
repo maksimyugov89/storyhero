@@ -3,6 +3,7 @@ import '../../design_system/app_colors.dart';
 import '../../design_system/app_typography.dart';
 import '../../design_system/app_spacing.dart';
 import '../../../../ui/components/asset_icon.dart';
+import '../../../../core/utils/text_style_helpers.dart';
 
 /// Список этапов с иконками статуса
 class AppStepList extends StatelessWidget {
@@ -69,7 +70,8 @@ class AppStepList extends StatelessWidget {
                   children: [
                     Text(
                       step.title,
-                      style: AppTypography.bodyLarge.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.bodyLarge,
                         fontWeight: isCurrent || isCompleted
                             ? FontWeight.bold
                             : FontWeight.normal,
@@ -82,7 +84,8 @@ class AppStepList extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xs),
                       Text(
                         step.description!,
-                        style: AppTypography.bodySmall.copyWith(
+                        style: safeCopyWith(
+                          AppTypography.bodySmall,
                           color: AppColors.onSurfaceVariant,
                         ),
                       ),

@@ -431,19 +431,19 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                                           const SizedBox(height: AppSpacing.lg),
                                           
                                           // Изображение или placeholder
-                                          Expanded(
+                                            Expanded(
                                             child: hasImage && scene.finalUrl != null
                                                 ? ClipRRect(
-                                                    borderRadius: BorderRadius.circular(16),
-                                                    child: RoundedImage(
+                                                borderRadius: BorderRadius.circular(16),
+                                                child: RoundedImage(
                                                       imageUrl: scene.finalUrl, // RoundedImage обрабатывает null/пустую строку
-                                                      height: double.infinity,
-                                                      width: double.infinity,
-                                                      radius: 16,
-                                                    ),
+                                                  height: double.infinity,
+                                                  width: double.infinity,
+                                                  radius: 16,
+                                                ),
                                                   )
                                                 : _buildImagePlaceholder(isLoading: isLoading),
-                                          ),
+                                            ),
                                           
                                           const SizedBox(height: AppSpacing.lg),
                                           

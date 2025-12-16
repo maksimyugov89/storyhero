@@ -250,7 +250,7 @@ class HomeScreen extends HookConsumerWidget {
                                       // Текстовая часть с гибкой высотой
                                       Expanded(
                                         child: Padding(
-                                          padding: AppSpacing.paddingSM,
+                                        padding: AppSpacing.paddingSM,
                                           child: Column(
                                             mainAxisSize: MainAxisSize.min,
                                             crossAxisAlignment: CrossAxisAlignment.start,

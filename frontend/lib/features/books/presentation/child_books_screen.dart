@@ -7,6 +7,7 @@ import '../../../core/widgets/loading_widget.dart';
 import '../../../core/widgets/magic/glassmorphic_card.dart';
 import '../../../ui/components/asset_icon.dart';
 import '../data/book_providers.dart';
+import '../../../core/utils/text_style_helpers.dart';
 
 class ChildBooksScreen extends ConsumerWidget {
   final String childId;
@@ -177,21 +178,25 @@ class ChildBooksScreen extends ConsumerWidget {
                                         children: [
                                           Text(
                                             book.title,
-                                            style: (Theme.of(context).textTheme.titleMedium ?? 
-                                                    const TextStyle(fontSize: 18)).copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                ),
+                                            style: safeCopyWith(
+                                              Theme.of(context).textTheme.titleMedium,
+                                              fontSize: 18.0,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
                                             '${book.createdAt.day}.${book.createdAt.month}.${book.createdAt.year}',
-                                            style: (Theme.of(context).textTheme.bodySmall ?? 
-                                                    const TextStyle(fontSize: 12)).copyWith(
-                                                  color: (Theme.of(context).textTheme.bodyMedium ?? 
-                                                          const TextStyle(fontSize: 14)).color?.withOpacity(0.7),
-                                                ),
+                                            style: safeCopyWith(
+                                              Theme.of(context).textTheme.bodySmall,
+                                              fontSize: 12.0,
+                                              color: safeCopyWith(
+                                                Theme.of(context).textTheme.bodyMedium,
+                                                fontSize: 14.0,
+                                              ).color?.withOpacity(0.7),
+                                            ),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                           ),

@@ -8,6 +8,7 @@ import '../../../../core/presentation/layouts/app_page.dart';
 import '../../../../core/presentation/design_system/app_colors.dart';
 import '../../../../core/presentation/design_system/app_typography.dart';
 import '../../../../core/presentation/design_system/app_spacing.dart';
+import '../../../../core/utils/text_style_helpers.dart';
 import '../../../../core/presentation/widgets/cards/app_magic_card.dart';
 import '../../../../core/presentation/widgets/buttons/app_magic_button.dart';
 import '../../../../core/presentation/widgets/buttons/app_button.dart';
@@ -253,7 +254,8 @@ class CreateBookScreen extends HookConsumerWidget {
                             fullWidth: true,
                             child: Text(
                               'Далее',
-                              style: AppTypography.labelLarge.copyWith(
+                              style: safeCopyWith(
+                                AppTypography.labelLarge,
                                 color: AppColors.onPrimary,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -275,10 +277,11 @@ class CreateBookScreen extends HookConsumerWidget {
                                 const SizedBox(width: AppSpacing.xs),
                                 Flexible(
                                   child: Text(
-                                    'Создать книгу',
-                                    style: AppTypography.labelLarge.copyWith(
-                                      color: AppColors.onPrimary,
-                                      fontWeight: FontWeight.bold,
+                                  'Создать книгу',
+                                    style: safeCopyWith(
+                                      AppTypography.labelLarge,
+                                    color: AppColors.onPrimary,
+                                    fontWeight: FontWeight.bold,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -336,7 +339,8 @@ class CreateBookScreen extends HookConsumerWidget {
         const SizedBox(height: AppSpacing.sm),
         Text(
           'Для кого создаём книгу?',
-          style: AppTypography.bodyLarge.copyWith(
+          style: safeCopyWith(
+            AppTypography.bodyLarge,
             color: AppColors.onSurfaceVariant,
           ),
         ),
@@ -361,7 +365,8 @@ class CreateBookScreen extends HookConsumerWidget {
                 Expanded(
                   child: Text(
                     errorMessage,
-                    style: AppTypography.bodyMedium.copyWith(
+                    style: safeCopyWith(
+                      AppTypography.bodyMedium,
                       color: AppColors.error,
                     ),
                   ),
@@ -393,7 +398,8 @@ class CreateBookScreen extends HookConsumerWidget {
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       'Создайте первого ребёнка',
-                      style: AppTypography.bodyMedium.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.bodyMedium,
                         color: AppColors.onSurfaceVariant,
                       ),
                     ),
@@ -436,7 +442,8 @@ class CreateBookScreen extends HookConsumerWidget {
                             child: Center(
                               child: Text(
                                 child.name[0].toUpperCase(),
-                                style: AppTypography.headlineSmall.copyWith(
+                                style: safeCopyWith(
+                                  AppTypography.headlineSmall,
                                   color: AppColors.onPrimary,
                                 ),
                               ),
@@ -453,7 +460,8 @@ class CreateBookScreen extends HookConsumerWidget {
                               ),
                               Text(
                                 '${child.age} лет',
-                                style: AppTypography.bodyMedium.copyWith(
+                                style: safeCopyWith(
+                                  AppTypography.bodyMedium,
                                   color: AppColors.onSurfaceVariant,
                                 ),
                               ),
@@ -482,7 +490,8 @@ class CreateBookScreen extends HookConsumerWidget {
             ),
             child: Text(
               'Ошибка загрузки: $error',
-              style: AppTypography.bodyMedium.copyWith(
+              style: safeCopyWith(
+                AppTypography.bodyMedium,
                 color: AppColors.error,
               ),
             ),
@@ -508,7 +517,8 @@ class CreateBookScreen extends HookConsumerWidget {
         const SizedBox(height: AppSpacing.sm),
         Text(
           'В каком стиле будет книга?',
-          style: AppTypography.bodyLarge.copyWith(
+          style: safeCopyWith(
+            AppTypography.bodyLarge,
             color: AppColors.onSurfaceVariant,
           ),
         ),
@@ -524,7 +534,8 @@ class CreateBookScreen extends HookConsumerWidget {
             ),
             child: Text(
               errorMessage,
-              style: AppTypography.bodyMedium.copyWith(
+              style: safeCopyWith(
+                AppTypography.bodyMedium,
                 color: AppColors.error,
               ),
             ),
@@ -563,7 +574,8 @@ class CreateBookScreen extends HookConsumerWidget {
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       style['name'] as String,
-                      style: AppTypography.labelLarge.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.labelLarge,
                         fontWeight: FontWeight.bold,
                       ),
                       textAlign: TextAlign.center,
@@ -571,7 +583,8 @@ class CreateBookScreen extends HookConsumerWidget {
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       style['description'] as String,
-                      style: AppTypography.bodySmall.copyWith(
+                      style: safeCopyWith(
+                        AppTypography.bodySmall,
                         color: AppColors.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
@@ -608,7 +621,8 @@ class CreateBookScreen extends HookConsumerWidget {
         const SizedBox(height: AppSpacing.sm),
         Text(
           'Проверьте выбранные параметры',
-          style: AppTypography.bodyLarge.copyWith(
+          style: safeCopyWith(
+            AppTypography.bodyLarge,
             color: AppColors.onSurfaceVariant,
           ),
         ),
@@ -624,7 +638,8 @@ class CreateBookScreen extends HookConsumerWidget {
             ),
             child: Text(
               errorMessage,
-              style: AppTypography.bodyMedium.copyWith(
+              style: safeCopyWith(
+                AppTypography.bodyMedium,
                 color: AppColors.error,
               ),
             ),
@@ -647,7 +662,8 @@ class CreateBookScreen extends HookConsumerWidget {
                   const SizedBox(width: AppSpacing.sm),
                   Text(
                     'Ребёнок',
-                    style: AppTypography.labelLarge.copyWith(
+                    style: safeCopyWith(
+                      AppTypography.labelLarge,
                       color: AppColors.onSurfaceVariant,
                     ),
                   ),
@@ -678,7 +694,8 @@ class CreateBookScreen extends HookConsumerWidget {
                         child: Center(
                           child: Text(
                             selectedChild.name[0].toUpperCase(),
-                            style: AppTypography.labelLarge.copyWith(
+                            style: safeCopyWith(
+                              AppTypography.labelLarge,
                               color: AppColors.onPrimary,
                             ),
                           ),
@@ -703,7 +720,8 @@ class CreateBookScreen extends HookConsumerWidget {
                   const SizedBox(width: AppSpacing.sm),
                   Text(
                     'Стиль',
-                    style: AppTypography.labelLarge.copyWith(
+                    style: safeCopyWith(
+                      AppTypography.labelLarge,
                       color: AppColors.onSurfaceVariant,
                     ),
                   ),

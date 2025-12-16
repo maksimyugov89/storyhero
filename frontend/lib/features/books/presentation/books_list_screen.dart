@@ -334,15 +334,15 @@ class _FilterChip extends StatelessWidget {
             ],
             Flexible(
               child: Text(
-                label,
+              label,
                 style: safeCopyWith(
                   AppTypography.labelMedium,
-                  color: isSelected
-                      ? AppColors.onPrimary
-                      : AppColors.onSurfaceVariant,
-                  fontWeight: isSelected
-                      ? FontWeight.bold
-                      : FontWeight.normal,
+                color: isSelected
+                    ? AppColors.onPrimary
+                    : AppColors.onSurfaceVariant,
+                fontWeight: isSelected
+                    ? FontWeight.bold
+                    : FontWeight.normal,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

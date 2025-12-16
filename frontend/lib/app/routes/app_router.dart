@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import '../../core/utils/text_style_helpers.dart';
 import '../../core/auth/auth_status.dart';
 import '../../core/auth/auth_status_provider.dart';
 import '../../features/splash/presentation/splash_screen.dart';
@@ -73,7 +74,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             const SizedBox(height: 16),
             Text(
               'Маршрут не найден: ${state.uri.path}',
-              style: const TextStyle(fontSize: 16),
+              style: safeTextStyle(fontSize: 16.0),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),

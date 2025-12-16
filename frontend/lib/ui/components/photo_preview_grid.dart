@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:io' if (dart.library.html) 'dart:html' as io;
 import 'asset_icon.dart';
+import '../../core/utils/text_style_helpers.dart';
 
 // Тип для файлов (поддержка web/mobile)
 typedef PhotoFile = io.File;
@@ -148,8 +149,9 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
       children: [
         Text(
           'Фотографии (${totalPhotos}/${widget.maxPhotos})',
-          style: (Theme.of(context).textTheme.titleMedium ?? 
-                  const TextStyle(fontSize: 18)).copyWith(
+          style: safeCopyWith(
+            Theme.of(context).textTheme.titleMedium,
+            fontSize: 18.0,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),

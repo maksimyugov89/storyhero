@@ -7,6 +7,7 @@ import '../../../core/presentation/layouts/app_page.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
+import '../../../core/utils/text_style_helpers.dart';
 import '../../../features/auth/data/auth_repository.dart';
 import '../../../core/auth/auth_status.dart';
 import '../../../core/auth/auth_status_provider.dart';
@@ -61,7 +62,7 @@ class SplashScreen extends HookConsumerWidget {
 
     final authRepo = ref.read(authRepositoryProvider);
     final authStatusNotifier = ref.read(authStatusProvider.notifier);
-    
+
     useEffect(() {
       fadeController.forward();
       
@@ -97,7 +98,8 @@ class SplashScreen extends HookConsumerWidget {
               opacity: fadeController,
               child: Text(
                 'Создаём магию...',
-                style: AppTypography.bodyLarge.copyWith(
+                style: safeCopyWith(
+                  AppTypography.bodyLarge,
                   color: AppColors.onBackground,
                 ),
               ),

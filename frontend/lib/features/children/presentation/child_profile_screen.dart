@@ -15,6 +15,7 @@ import '../../../ui/components/asset_icon.dart';
 import '../../../ui/components/photo_preview_grid.dart';
 import '../data/child_photos_provider.dart';
 import '../../../core/models/child_photo.dart';
+import '../../../core/utils/text_style_helpers.dart';
 
 final childProvider = FutureProvider.family<Child, String>((ref, childId) async {
   final api = ref.watch(backendApiProvider);
@@ -47,7 +48,7 @@ class ChildProfileScreen extends HookConsumerWidget {
     }
     return {};
   }
-  
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final childAsync = ref.watch(childProvider(childId));
@@ -78,9 +79,9 @@ class ChildProfileScreen extends HookConsumerWidget {
               appBar: AppBar(
                 backgroundColor: Colors.transparent,
                 elevation: 0,
-                title: const Text(
+                title: Text(
                   'Профиль ребёнка',
-                  style: TextStyle(color: Colors.white),
+                  style: safeTextStyle(color: Colors.white),
                 ),
                 iconTheme: const IconThemeData(color: Colors.white),
               ),
@@ -144,9 +145,9 @@ class ChildProfileScreen extends HookConsumerWidget {
                                                     child.name.isNotEmpty 
                                                         ? child.name[0].toUpperCase()
                                                         : '?',
-                                                    style: const TextStyle(
+                                                    style: safeTextStyle(
                                                       color: Colors.white,
-                                                      fontSize: 60,
+                                                      fontSize: 60.0,
                                                       fontWeight: FontWeight.bold,
                                                     ),
                                                   ),
@@ -160,9 +161,9 @@ class ChildProfileScreen extends HookConsumerWidget {
                                             child.name.isNotEmpty
                                                 ? child.name[0].toUpperCase()
                                                 : '?',
-                                            style: const TextStyle(
+                                            style: safeTextStyle(
                                               color: Colors.white,
-                                              fontSize: 60,
+                                              fontSize: 60.0,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -186,8 +187,9 @@ class ChildProfileScreen extends HookConsumerWidget {
                                         children: [
                                           Text(
                                             child.name,
-                                            style: (Theme.of(context).textTheme.headlineMedium ?? 
-                                                    const TextStyle(fontSize: 24)).copyWith(
+                                            style: safeCopyWith(
+                                              Theme.of(context).textTheme.headlineMedium,
+                                              fontSize: 24.0,
                                                   fontWeight: FontWeight.bold,
                                                   color: Colors.white,
                                                 ),
@@ -195,8 +197,9 @@ class ChildProfileScreen extends HookConsumerWidget {
                                           const SizedBox(height: 4),
                                           Text(
                                             '${child.age} лет',
-                                            style: (Theme.of(context).textTheme.titleMedium ?? 
-                                                    const TextStyle(fontSize: 18)).copyWith(
+                                            style: safeCopyWith(
+                                              Theme.of(context).textTheme.titleMedium,
+                                              fontSize: 18.0,
                                                   color: Colors.white70,
                                                 ),
                                           ),
@@ -233,7 +236,7 @@ class ChildProfileScreen extends HookConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 24),
-                          GlassmorphicCard(
+                            GlassmorphicCard(
                               padding: const EdgeInsets.all(24),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,8 +246,9 @@ class ChildProfileScreen extends HookConsumerWidget {
                                     children: [
                                       Text(
                                         'Фотографии',
-                                        style: (Theme.of(context).textTheme.titleLarge ?? 
-                                                const TextStyle(fontSize: 20)).copyWith(
+                                        style: safeCopyWith(
+                                          Theme.of(context).textTheme.titleLarge,
+                                          fontSize: 20.0,
                                               color: Colors.white,
                                             ),
                                       ),
@@ -253,11 +257,12 @@ class ChildProfileScreen extends HookConsumerWidget {
                                   const SizedBox(height: 8),
                                   Text(
                                     '⭐ Нажмите на фото, чтобы выбрать его как аватарку профиля',
-                                    style: (Theme.of(context).textTheme.bodySmall ?? 
-                                            const TextStyle(fontSize: 12)).copyWith(
+                                    style: safeCopyWith(
+                                      Theme.of(context).textTheme.bodySmall,
+                                      fontSize: 12.0,
                                           color: Colors.white,
-                                          fontStyle: FontStyle.italic,
-                                        ),
+                                      decoration: null,
+                                    ).copyWith(fontStyle: FontStyle.italic),
                                   ),
                                   const SizedBox(height: 16),
                                   _PhotoGalleryWithAvatar(
@@ -520,7 +525,7 @@ class _PhotoGalleryWithAvatar extends HookConsumerWidget {
                 const SizedBox(height: 8),
                 Text(
                   'Нет фотографий',
-                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  style: safeTextStyle(color: Colors.white.withOpacity(0.7)),
                 ),
               ],
             ),
@@ -564,7 +569,7 @@ class _PhotoGalleryWithAvatar extends HookConsumerWidget {
             const SizedBox(height: 8),
             Text(
               'Не удалось загрузить фотографии',
-              style: TextStyle(color: Colors.red[600]),
+              style: safeTextStyle(color: Colors.red[600]),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -618,16 +623,18 @@ class _InfoRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: (Theme.of(context).textTheme.bodySmall ?? 
-                        const TextStyle(fontSize: 12)).copyWith(
+                style: safeCopyWith(
+                  Theme.of(context).textTheme.bodySmall,
+                  fontSize: 12.0,
                       color: Colors.white70,
                     ),
               ),
               const SizedBox(height: 4),
               Text(
                 value,
-                style: (Theme.of(context).textTheme.bodyMedium ?? 
-                        const TextStyle(fontSize: 14)).copyWith(
+                style: safeCopyWith(
+                  Theme.of(context).textTheme.bodyMedium,
+                  fontSize: 14.0,
                       color: Colors.white,
                     ),
               ),

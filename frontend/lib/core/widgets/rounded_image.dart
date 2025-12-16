@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../utils/text_style_helpers.dart';
 
 class RoundedImage extends StatelessWidget {
   final String? imageUrl;
@@ -30,9 +31,14 @@ class RoundedImage extends StatelessWidget {
         ),
         child: Icon(
           Icons.image_outlined,
-          size: (width != null && height != null)
-              ? (width! < height! ? width! * 0.5 : height! * 0.5)
-              : 48,
+          size: safeFontSize(
+            (width != null && height != null && width! > 0 && height! > 0)
+                ? (width! < height! ? width! * 0.5 : height! * 0.5)
+                : 48.0,
+            defaultValue: 48.0,
+            min: 16.0,
+            max: 200.0,
+          ),
           color: Colors.grey[600],
         ),
       );
@@ -64,9 +70,14 @@ class RoundedImage extends StatelessWidget {
             child: Icon(
               Icons.image_not_supported_outlined,
               color: Colors.grey[600],
-              size: (width != null && height != null)
-                  ? (width! < height! ? width! * 0.5 : height! * 0.5)
-                  : 48,
+              size: safeFontSize(
+                (width != null && height != null && width! > 0 && height! > 0)
+                    ? (width! < height! ? width! * 0.5 : height! * 0.5)
+                    : 48.0,
+                defaultValue: 48.0,
+                min: 16.0,
+                max: 200.0,
+              ),
             ),
           );
         },

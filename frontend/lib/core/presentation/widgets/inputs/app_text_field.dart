@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../design_system/app_colors.dart';
 import '../../design_system/app_typography.dart';
 import '../../../../ui/components/asset_icon.dart';
+import '../../../../core/utils/text_style_helpers.dart';
 
 /// Поле ввода с магическим стилем
 class AppTextField extends StatefulWidget {
@@ -66,14 +67,16 @@ class _AppTextFieldState extends State<AppTextField> {
       focusNode: widget.focusNode,
       textInputAction: widget.textInputAction,
       onFieldSubmitted: widget.onSubmitted != null ? (_) => widget.onSubmitted!() : null,
-      style: AppTypography.bodyLarge.copyWith(color: AppColors.onSurface),
+      style: safeCopyWith(AppTypography.bodyLarge, color: AppColors.onSurface),
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: widget.hint,
-        hintStyle: AppTypography.bodyMedium.copyWith(
+        hintStyle: safeCopyWith(
+          AppTypography.bodyMedium,
           color: AppColors.onSurfaceVariant,
         ),
-        labelStyle: AppTypography.labelLarge.copyWith(
+        labelStyle: safeCopyWith(
+          AppTypography.labelLarge,
           color: AppColors.onSurfaceVariant,
         ),
         prefixIcon: widget.prefixIcon != null

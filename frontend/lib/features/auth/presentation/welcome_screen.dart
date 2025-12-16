@@ -97,17 +97,19 @@ class WelcomeScreen extends HookConsumerWidget {
                         child: Text(
                           'StoryHero',
                           textAlign: TextAlign.center,
-                          style: (Theme.of(context).textTheme.displayLarge ?? 
-                                  const TextStyle(fontSize: 48)).copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black.withOpacity(0.5),
-                                    blurRadius: 10,
-                                  ),
-                                ],
+                          style: safeCopyWith(
+                            Theme.of(context).textTheme.displayLarge,
+                            fontSize: 48.0,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ).copyWith(
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withOpacity(0.5),
+                                blurRadius: 10,
                               ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -116,10 +118,12 @@ class WelcomeScreen extends HookConsumerWidget {
                         child: Text(
                           'Создавайте персонализированные детские книги с помощью магии ИИ',
                           textAlign: TextAlign.center,
-                          style: (Theme.of(context).textTheme.titleMedium ?? 
-                                  const TextStyle(fontSize: 18)).copyWith(
-                                color: Colors.white.withOpacity(0.9),
-                                shadows: [
+                          style: safeCopyWith(
+                            Theme.of(context).textTheme.titleMedium,
+                            fontSize: 18.0,
+                            color: Colors.white.withOpacity(0.9),
+                          ).copyWith(
+                            shadows: [
                                   Shadow(
                                     color: Colors.black.withOpacity(0.5),
                                     blurRadius: 8,
@@ -157,7 +161,7 @@ class WelcomeScreen extends HookConsumerWidget {
                                 onPressed: () => context.go(RouteNames.login),
                                 child: Text(
                                   'Продолжить',
-                                  style: TextStyle(
+                                  style: safeTextStyle(
                                     color: Colors.white.withOpacity(0.9),
                                     fontSize: 16,
                                     fontWeight: FontWeight.w500,

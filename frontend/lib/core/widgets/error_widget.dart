@@ -3,6 +3,7 @@ import '../utils/error_analyzer.dart';
 import 'magic/glassmorphic_card.dart';
 import 'magic/magic_button.dart';
 import '../../ui/components/asset_icon.dart';
+import '../utils/text_style_helpers.dart';
 
 class ErrorDisplayWidget extends StatelessWidget {
   final dynamic error;
@@ -84,8 +85,9 @@ class ErrorDisplayWidget extends StatelessWidget {
                         : analysis.isServerError
                             ? 'Сервер недоступен'
                             : 'Произошла ошибка',
-                    style: (Theme.of(context).textTheme.headlineSmall ?? 
-                            const TextStyle(fontSize: 20)).copyWith(
+                    style: safeCopyWith(
+                      Theme.of(context).textTheme.headlineSmall,
+                      fontSize: 20.0,
                       fontWeight: FontWeight.bold,
                     ),
                     textAlign: TextAlign.center,
@@ -115,12 +117,12 @@ class ErrorDisplayWidget extends StatelessWidget {
                                 color: Colors.white,
                               ),
                               const SizedBox(width: 8),
-                              const Text(
+                              Text(
                                 'Повторить',
-                                style: TextStyle(
+                                style: safeTextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                                  fontSize: 16.0,
                                 ),
                               ),
                             ],
@@ -151,10 +153,10 @@ class ErrorDisplayWidget extends StatelessWidget {
                               const SizedBox(width: 8),
                               Text(
                                 exitText,
-                                style: const TextStyle(
+                                style: safeTextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                                  fontSize: 16.0,
                                 ),
                               ),
                             ],
