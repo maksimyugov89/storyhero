@@ -83,7 +83,7 @@ def get_server_base_url() -> str:
     Получить базовый URL сервера для формирования публичных URL
     
     Returns:
-        str: Базовый URL (например, "http://localhost:8000")
+        str: Базовый URL (например, "https://storyhero.ru")
     """
     # Явный публичный URL имеет приоритет (например, https://storyhero.ru)
     public_base = os.getenv("PUBLIC_BASE_URL")
@@ -95,12 +95,20 @@ def get_server_base_url() -> str:
     server_port = os.getenv("SERVER_PORT", "")
     server_protocol = os.getenv("SERVER_PROTOCOL", "https")
 
+    # ВАЖНО: Для production через nginx порт не нужен в URL
+    # Если это production домен (не localhost), всегда убираем порт
+    if server_host not in ("localhost", "127.0.0.1", "0.0.0.0"):
+        # Production окружение - не добавляем порт к URL (nginx проксирует)
+        return f"{server_protocol}://{server_host}"
+    
+    # Для localhost/development - добавляем порт если он нестандартный
     # Если порт стандартный — не добавляем
     if (server_protocol == "https" and server_port in ("443", "", None)) or (
         server_protocol == "http" and server_port in ("80", "", None)
     ):
         return f"{server_protocol}://{server_host}"
-
+    
+    # Для development с нестандартным портом - добавляем порт
     return f"{server_protocol}://{server_host}:{server_port}"
 
 
