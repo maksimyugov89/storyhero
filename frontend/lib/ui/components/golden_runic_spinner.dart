@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../core/utils/text_style_helpers.dart';
 
 /// Золотой спиральный индикатор загрузки из рун
 class GoldenRunicSpinner extends StatefulWidget {
@@ -83,6 +84,10 @@ class _RunicSpiralPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (!size.width.isFinite || !size.height.isFinite || size.width <= 0 || size.height <= 0) {
+      return;
+    }
+    
     final center = Offset(size.width / 2, size.height / 2);
     final maxRadius = size.width * 0.4;
     
@@ -133,9 +138,10 @@ class _RunicSpiralPainter extends CustomPainter {
 
       runePaint.text = TextSpan(
         text: runes[i],
-        style: TextStyle(
+        style: safeTextStyle(
           fontSize: 16,
           color: const Color(0xFFFFD93D).withOpacity(0.9 - (t % 1) * 0.5),
+        ).copyWith(
           shadows: [
             Shadow(
               color: const Color(0xFFFFD93D).withOpacity(0.8),

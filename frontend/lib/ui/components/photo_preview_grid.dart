@@ -263,17 +263,37 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
                                 color: primaryColor,
                               ),
                             ),
-                  // Индикатор аватарки
+                  // Рамка для текущего avatar
+                  if (isCurrentAvatar)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.amber,
+                            width: 3,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.amber.withOpacity(0.5),
+                              blurRadius: 8,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  // Иконка ⭐ для текущего avatar
                   if (isCurrentAvatar)
                     Positioned(
                       top: 4,
-                      left: 4,
+                      right: 4,
                       child: Container(
-                        width: 24,
-                        height: 24,
+                        width: 28,
+                        height: 28,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.green,
+                          color: Colors.amber,
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withOpacity(0.3),
@@ -282,7 +302,7 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
                           ],
                         ),
                         child: const Icon(
-                          Icons.check_circle,
+                          Icons.star,
                           color: Colors.white,
                           size: 18,
                         ),

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../../core/utils/text_style_helpers.dart';
 
 /// Золотая открытая книга с буквами SH и вылетающими звездами
 class GoldenBookLogo extends StatefulWidget {
@@ -54,13 +55,18 @@ class _GoldenBookLogoState extends State<GoldenBookLogo>
 
   @override
   Widget build(BuildContext context) {
+    final safeSize = widget.size.isFinite && widget.size > 0 
+        ? widget.size 
+        : 200.0;
+    assert(safeSize.isFinite && safeSize > 0, 'safeSize must be finite and positive');
+    
     return AnimatedBuilder(
       animation: Listenable.merge([_starController, _glowController]),
       builder: (context, child) {
         final glowValue = (_glowController.value * 0.3) + 0.7;
         
         return CustomPaint(
-          size: Size(widget.size, widget.size * 0.8),
+          size: Size(safeSize, safeSize * 0.8),
           painter: _GoldenBookPainter(
             stars: _stars,
             progress: _starController.value,
@@ -99,6 +105,10 @@ class _GoldenBookPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (!size.width.isFinite || !size.height.isFinite || size.width <= 0 || size.height <= 0) {
+      return;
+    }
+
     final center = Offset(size.width / 2, size.height / 2);
     
     // Рисуем свечение вокруг книги
@@ -125,6 +135,8 @@ class _GoldenBookPainter extends CustomPainter {
     final bookWidth = size.width * 0.6;
     final bookHeight = size.height * 0.7;
     final spineWidth = bookWidth * 0.1;
+
+    assert(bookHeight.isFinite && bookHeight > 0, 'bookHeight must be finite and positive');
 
     // Золотая обложка (левая сторона)
     final leftCoverPaint = Paint()
@@ -189,12 +201,14 @@ class _GoldenBookPainter extends CustomPainter {
     );
 
     // Буква S на левой странице
+    final fontSizeS = safeFontSize(bookHeight * 0.4, defaultValue: 48.0, min: 8.0, max: 200.0);
     textPainter.text = TextSpan(
       text: 'S',
-      style: TextStyle(
-        fontSize: bookHeight * 0.4,
+      style: safeTextStyle(
+        fontSize: fontSizeS,
         fontWeight: FontWeight.bold,
         color: const Color(0xFFFFD93D),
+      ).copyWith(
         shadows: [
           Shadow(
             color: Colors.black.withOpacity(0.5),
@@ -214,12 +228,14 @@ class _GoldenBookPainter extends CustomPainter {
     );
 
     // Буква H на правой странице
+    final fontSizeH = safeFontSize(bookHeight * 0.4, defaultValue: 48.0, min: 8.0, max: 200.0);
     textPainter.text = TextSpan(
       text: 'H',
-      style: TextStyle(
-        fontSize: bookHeight * 0.4,
+      style: safeTextStyle(
+        fontSize: fontSizeH,
         fontWeight: FontWeight.bold,
         color: const Color(0xFFFFD93D),
+      ).copyWith(
         shadows: [
           Shadow(
             color: Colors.black.withOpacity(0.5),

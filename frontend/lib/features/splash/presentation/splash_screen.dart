@@ -57,16 +57,17 @@ class SplashScreen extends HookConsumerWidget {
         });
       }
       return null;
-    }, []);
+    }, [authStatus]);
 
+    final authRepo = ref.read(authRepositoryProvider);
+    final authStatusNotifier = ref.read(authStatusProvider.notifier);
+    
     useEffect(() {
       fadeController.forward();
       
       // Проверяем токен при старте и обновляем authStatusProvider
       Future.delayed(const Duration(seconds: 2), () async {
         if (!context.mounted || navigated.value) return;
-        
-        final authRepo = ref.read(authRepositoryProvider);
         final token = await authRepo.token();
         
         if (!context.mounted || navigated.value) return;
@@ -75,14 +76,14 @@ class SplashScreen extends HookConsumerWidget {
         // AuthRepository._checkAuthState() уже вызывается при инициализации,
         // но для надежности проверяем еще раз
         if (token != null && token.isNotEmpty) {
-          ref.read(authStatusProvider.notifier).state = AuthStatus.authenticated;
+          authStatusNotifier.state = AuthStatus.authenticated;
         } else {
-          ref.read(authStatusProvider.notifier).state = AuthStatus.unauthenticated;
+          authStatusNotifier.state = AuthStatus.unauthenticated;
         }
       });
       
       return null;
-    }, []);
+    }, [authRepo, authStatusNotifier]);
 
     return AppPage(
       backgroundImage: 'assets/logo/storyhero_start.png',

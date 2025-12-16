@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme_magic.dart';
+import '../../core/utils/text_style_helpers.dart';
 import 'asset_icon.dart';
 
 /// Магический input-поле с анимированным placeholder и светящейся рамкой
@@ -284,7 +285,8 @@ class _AnimatedMagicInputState extends State<AnimatedMagicInput>
                     origin: const Offset(0, 0),
                     child: Text(
                       widget.label!,
-                      style: TextStyle(
+                      textScaler: TextScaler.noScaling,
+                      style: safeTextStyle(
                         fontSize: isFloating ? 12 : 16,
                         fontWeight: isFloating ? FontWeight.w600 : FontWeight.w500,
                         color: _isFocused
@@ -312,7 +314,8 @@ class _AnimatedMagicInputState extends State<AnimatedMagicInput>
                     padding: const EdgeInsets.only(left: 4, top: 4),
                     child: Text(
                       _errorText!,
-                      style: TextStyle(
+                      textScaler: TextScaler.noScaling,
+                      style: safeTextStyle(
                         color: errorColor,
                         fontSize: 12,
                         fontWeight: FontWeight.w500,

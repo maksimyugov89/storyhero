@@ -17,6 +17,7 @@ import '../../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../../ui/components/photo_preview_grid.dart';
 import '../../../../ui/components/asset_icon.dart';
 import '../presentation/children_list_screen.dart';
+import '../state/child_photos_provider.dart';
 import 'dart:io' if (dart.library.html) 'dart:html' as io;
 
 class ChildCreateScreen extends HookConsumerWidget {
@@ -60,7 +61,7 @@ class ChildCreateScreen extends HookConsumerWidget {
       try {
         final api = ref.read(backendApiProvider);
         
-        await api.createChild(
+        final createdChild = await api.createChild(
           name: nameController.text.trim(),
           age: age,
           interests: interestsController.text.trim(),
@@ -69,6 +70,11 @@ class ChildCreateScreen extends HookConsumerWidget {
           moral: moralController.text.trim(),
           photos: selectedPhotos.value.isNotEmpty ? selectedPhotos.value : null,
         );
+
+        if (createdChild.faceUrl != null && createdChild.faceUrl!.isNotEmpty) {
+          final photosNotifier = ref.read(childPhotosProvider(createdChild.id).notifier);
+          photosNotifier.addPhoto(createdChild.faceUrl!);
+        }
 
         if (context.mounted) {
           ref.invalidate(childrenProvider);

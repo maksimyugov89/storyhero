@@ -40,50 +40,48 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
   Timer? _pollingTimer;
   DateTime? _pollingStart;
   bool _isTimedOut = false;
+  bool _isDisposed = false;
   
-  // State machine tracking
   BookGenerationStep? _lastStep;
   String? _lastStatus;
   bool _navigated = false;
   bool _lockUnlocked = false;
 
   @override
-  void initState() {
-    super.initState();
-    _startPolling();
-  }
-
-  @override
   void dispose() {
+    _isDisposed = true;
     _pollingTimer?.cancel();
+    _pollingTimer = null;
     super.dispose();
   }
 
   void _startPolling() {
+    if (_isDisposed) return;
+    
     _pollingTimer?.cancel();
     _isTimedOut = false;
     _pollingStart = DateTime.now();
     _navigated = false;
     _lockUnlocked = false;
 
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!mounted) {
-        _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (_isDisposed || !mounted) {
+        timer.cancel();
         return;
       }
 
-      // Check timeout
-      if (_pollingStart != null &&
-          DateTime.now().difference(_pollingStart!) >
-              const Duration(minutes: 7)) {
-        _pollingTimer?.cancel();
-        if (mounted) {
+      final elapsed = _pollingStart != null
+          ? DateTime.now().difference(_pollingStart!)
+          : Duration.zero;
+
+      if (elapsed > const Duration(minutes: 7)) {
+        timer.cancel();
+        if (!_isDisposed && mounted) {
           setState(() {
             _isTimedOut = true;
           });
-          // Schedule unlock after build completes
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
+            if (!_isDisposed && mounted) {
               _unlockGeneration();
             }
           });
@@ -91,8 +89,7 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
         return;
       }
 
-      // Invalidate provider to trigger refresh
-      if (mounted) {
+      if (!_isDisposed && mounted) {
         ref.invalidate(taskStatusProvider(widget.taskId));
       }
     });
@@ -104,19 +101,18 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
   }
 
   void _unlockGeneration() {
-    if (!_lockUnlocked) {
+    if (!_lockUnlocked && !_isDisposed && mounted) {
       _lockUnlocked = true;
       ref.read(generationLockProvider.notifier).state = false;
     }
   }
 
   void _handleTaskStateChange(TaskStatus? previous, TaskStatus current) {
-    if (!mounted) return;
+    if (_isDisposed || !mounted) return;
 
     final currentStep = current.generationStatus.step;
     final currentStatus = current.status;
 
-    // Detect state transitions
     final stepChanged = _lastStep != currentStep;
     final statusChanged = _lastStatus != currentStatus;
 
@@ -127,37 +123,30 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
       _lastStatus = currentStatus;
     }
 
-    // Handle completed state - check both status and step to prevent double navigation
     if ((currentStatus == 'completed' || currentStep == BookGenerationStep.done) && 
         current.bookId != null && 
         !_navigated) {
       _stopPolling();
       _navigated = true;
       
-      // Store bookId locally to prevent null issues
       final bookId = current.bookId;
       
-      // Schedule unlock and navigation after build completes
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && bookId != null) {
-          _unlockGeneration();
-          // Navigate after a short delay for UI feedback
-          Future.delayed(const Duration(milliseconds: 800), () {
-            if (mounted && bookId != null) {
-              context.go(RouteNames.bookView.replaceAll(':id', bookId));
-            }
-          });
-        }
+        if (_isDisposed || !mounted || bookId == null) return;
+        _unlockGeneration();
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (!_isDisposed && mounted && bookId != null) {
+            context.go(RouteNames.bookView.replaceAll(':id', bookId));
+          }
+        });
       });
       return;
     }
 
-    // Handle failed/error state
     if ((currentStatus == 'failed' || currentStatus == 'error') && !_lockUnlocked) {
       _stopPolling();
-      // Schedule unlock after build completes
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
+        if (!_isDisposed && mounted) {
           _unlockGeneration();
         }
       });
@@ -166,15 +155,16 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
   }
 
   void _handleRetry() {
+    if (_isDisposed || !mounted) return;
+    
     _navigated = false;
     _lockUnlocked = false;
+    _isTimedOut = false;
     
-    // Set lock first
     ref.read(generationLockProvider.notifier).state = true;
     
-    // Schedule polling start and invalidation after lock is set
     Future.microtask(() {
-      if (mounted) {
+      if (!_isDisposed && mounted) {
         _startPolling();
         ref.invalidate(taskStatusProvider(widget.taskId));
       }
@@ -184,16 +174,26 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
   void _handleExit() {
     _stopPolling();
     _unlockGeneration();
-    if (mounted) {
+    if (!_isDisposed && mounted) {
       context.go(RouteNames.books);
     }
   }
 
   double _getProgress(TaskStatus task) {
+    if (task.progress != null && task.progress! >= 0 && task.progress! <= 1) {
+      return task.progress!;
+    }
+    
     final step = task.generationStatus.step;
     switch (step) {
+      case BookGenerationStep.profile:
+        return 0.05;
+      case BookGenerationStep.plot:
+        return 0.1;
       case BookGenerationStep.text:
         return 0.2;
+      case BookGenerationStep.prompts:
+        return 0.35;
       case BookGenerationStep.draftImages:
         return 0.5;
       case BookGenerationStep.finalImages:
@@ -204,20 +204,48 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
         return 0.1;
     }
   }
+  
+  String? _getDetailedProgressMessage(TaskStatus task) {
+    final step = task.generationStatus.step;
+    final progress = task.progress;
+    
+    if (progress != null && progress > 0 && progress < 1) {
+      if (step == BookGenerationStep.draftImages || step == BookGenerationStep.finalImages) {
+        final totalImages = 4;
+        final currentImage = ((progress * totalImages).ceil()).clamp(1, totalImages);
+        return 'Генерация изображения $currentImage из $totalImages';
+      }
+    }
+    
+    return null;
+  }
 
   List<StepItem> _getSteps(TaskStatus task) {
+    final step = task.generationStatus.step;
+    final detailedProgress = _getDetailedProgressMessage(task);
+    
     return [
       StepItem(
         title: 'Генерация текста',
-        description: 'Создаём историю...',
+        description: step == BookGenerationStep.text && detailedProgress == null
+            ? 'Создаём историю...'
+            : step == BookGenerationStep.text
+                ? detailedProgress ?? 'Создаём историю...'
+                : 'Создаём историю',
       ),
       StepItem(
         title: 'Создание изображений',
-        description: 'Рисуем иллюстрации...',
+        description: (step == BookGenerationStep.draftImages || step == BookGenerationStep.finalImages) && detailedProgress != null
+            ? detailedProgress!
+            : step == BookGenerationStep.draftImages || step == BookGenerationStep.finalImages
+                ? 'Рисуем иллюстрации...'
+                : 'Рисуем иллюстрации',
       ),
       StepItem(
         title: 'Финальная обработка',
-        description: 'Завершаем книгу...',
+        description: step == BookGenerationStep.done
+            ? 'Завершаем книгу...'
+            : 'Завершаем книгу',
       ),
       StepItem(
         title: 'Готово',
@@ -229,14 +257,16 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
   int _getCurrentStepIndex(TaskStatus task) {
     final step = task.generationStatus.step;
     switch (step) {
+      case BookGenerationStep.profile:
+      case BookGenerationStep.plot:
       case BookGenerationStep.text:
         return 0;
+      case BookGenerationStep.prompts:
       case BookGenerationStep.draftImages:
-        return 1;
       case BookGenerationStep.finalImages:
-        return 2;
+        return 1;
       case BookGenerationStep.done:
-        return 3;
+        return 2;
       default:
         return 0;
     }
@@ -246,10 +276,10 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
   Widget build(BuildContext context) {
     final taskAsync = ref.watch(taskStatusProvider(widget.taskId));
 
-    // Listen to task changes for state machine
     ref.listen<AsyncValue<TaskStatus>>(
       taskStatusProvider(widget.taskId),
       (previous, next) {
+        if (_isDisposed || !mounted) return;
         if (next.hasValue && next.value != null) {
           _handleTaskStateChange(
             previous?.value,
@@ -258,6 +288,14 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
         }
       },
     );
+
+    if (!_isDisposed && _pollingTimer == null && !_isTimedOut && !_navigated) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed && mounted && _pollingTimer == null) {
+          _startPolling();
+        }
+      });
+    }
 
     // Timeout UI
     if (_isTimedOut) {
@@ -366,6 +404,11 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
             }
 
             if (task.status == 'failed' || task.status == 'error') {
+              final errorMessage = task.error?.trim();
+              final displayMessage = errorMessage != null && errorMessage.isNotEmpty
+                  ? errorMessage
+                  : 'Произошла ошибка при генерации книги. Пожалуйста, попробуйте ещё раз.';
+              
               return Center(
                 child: Padding(
                   padding: AppSpacing.paddingMD,
@@ -386,10 +429,19 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: AppSpacing.md),
-                      Text(
-                        task.error ?? 'Произошла ошибка',
-                        style: AppTypography.bodyMedium,
-                        textAlign: TextAlign.center,
+                      Container(
+                        padding: AppSpacing.paddingMD,
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          displayMessage,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: AppColors.error,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                       const SizedBox(height: AppSpacing.xl),
                       AppButton(
@@ -434,12 +486,35 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                     textAlign: TextAlign.center,
                   ),
                   
+                  const SizedBox(height: AppSpacing.md),
+                  
+                  // Текущий этап с деталями
+                  Text(
+                    task.generationStatus.step.displayName,
+                    style: AppTypography.bodyLarge.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  
+                  if (_getDetailedProgressMessage(task) != null) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      _getDetailedProgressMessage(task)!,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  
                   const SizedBox(height: AppSpacing.xl),
                   
                   // Прогресс-бар
                   AppProgressBar(
                     progress: progress,
-                    label: 'Прогресс',
+                    label: 'Прогресс: ${(progress * 100).toStringAsFixed(0)}%',
                   ),
                   
                   const SizedBox(height: AppSpacing.xl),

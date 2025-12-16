@@ -246,6 +246,11 @@ class BookViewScreen extends HookConsumerWidget {
                               frontPage: BookPage(
                                 child: LayoutBuilder(
                                   builder: (context, constraints) {
+                                    if (!constraints.maxWidth.isFinite || !constraints.maxHeight.isFinite || 
+                                        constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    
                                     return Padding(
                                       padding: AppSpacing.paddingLG,
                                       child: Column(

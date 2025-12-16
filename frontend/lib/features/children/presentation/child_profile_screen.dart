@@ -13,6 +13,7 @@ import '../../../core/widgets/magic/glassmorphic_card.dart';
 import '../../../ui/components/glowing_capsule_button.dart';
 import '../../../ui/components/asset_icon.dart';
 import '../../../ui/components/photo_preview_grid.dart';
+import '../state/child_photos_provider.dart';
 
 final childProvider = FutureProvider.family<Child, String>((ref, childId) async {
   final api = ref.watch(backendApiProvider);
@@ -46,26 +47,13 @@ class ChildProfileScreen extends HookConsumerWidget {
     return {};
   }
   
-  /// Получает все фото ребенка: сначала из массива photos, затем faceUrl если есть
-  static List<String> _getAllPhotos(Child child) {
-    final photos = <String>[];
-    // Добавляем фото из массива photos (если есть)
-    if (child.photos != null && child.photos!.isNotEmpty) {
-      photos.addAll(child.photos!);
-    }
-    // Добавляем faceUrl если его еще нет в списке
-    if (child.faceUrl != null && child.faceUrl!.isNotEmpty && !photos.contains(child.faceUrl)) {
-      photos.insert(0, child.faceUrl!); // faceUrl в начало
-    }
-    return photos;
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final childAsync = ref.watch(childProvider(childId));
     final fadeAnimation = useAnimationController(
       duration: const Duration(milliseconds: 600),
     );
+    final photosState = ref.watch(childPhotosProvider(childId));
 
     useEffect(() {
       fadeAnimation.forward();
@@ -245,9 +233,7 @@ class ChildProfileScreen extends HookConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 24),
-                          // Галерея фотографий с возможностью выбора аватарки
-                          // Показываем галерею если есть хотя бы одно фото (faceUrl или photos)
-                          if (_getAllPhotos(child).isNotEmpty)
+                          if (photosState.isNotEmpty || child.faceUrl != null)
                             GlassmorphicCard(
                               padding: const EdgeInsets.all(24),
                               child: Column(
@@ -275,43 +261,10 @@ class ChildProfileScreen extends HookConsumerWidget {
                                         ),
                                   ),
                                   const SizedBox(height: 16),
-                                  PhotoPreviewGrid(
-                                    existingPhotos: _getAllPhotos(child),
-                                    currentAvatarUrl: child.faceUrl,
-                                    allowAvatarSelection: true,
-                                    onPhotoSelectedAsAvatar: (url) async {
-                                      // Обновляем аватарку через API
-                                      try {
-                                        final api = ref.read(backendApiProvider);
-                                        await api.updateChild(
-                                          id: child.id,
-                                          faceUrl: url,
-                                        );
-                                        
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(
-                                              content: Text('Аватарка обновлена'),
-                                              backgroundColor: Colors.green,
-                                              duration: Duration(seconds: 2),
-                                            ),
-                                          );
-                                          // Обновляем данные
-                                          ref.invalidate(childProvider(childId));
-                                        }
-                                      } catch (e) {
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('Ошибка обновления аватарки: $e'),
-                                              backgroundColor: Colors.red,
-                                              duration: const Duration(seconds: 3),
-                                            ),
-                                          );
-                                        }
-                                      }
-                                    },
-                                    maxPhotos: 5,
+                                  _PhotoGalleryWithAvatar(
+                                    child: child,
+                                    childId: childId,
+                                    fallbackFaceUrl: child.faceUrl,
                                   ),
                                 ],
                               ),
@@ -327,9 +280,6 @@ class ChildProfileScreen extends HookConsumerWidget {
                                   RouteNames.childEdit.replaceAll(':id', child.id),
                                   extra: child,
                                 );
-                                if (updated == true && context.mounted) {
-                                  ref.invalidate(childProvider(childId));
-                                }
                               } catch (e) {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -405,6 +355,142 @@ class ChildProfileScreen extends HookConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PhotoGalleryWithAvatar extends HookConsumerWidget {
+  final Child child;
+  final String childId;
+  final String? fallbackFaceUrl;
+
+  const _PhotoGalleryWithAvatar({
+    required this.child,
+    required this.childId,
+    this.fallbackFaceUrl,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isLoading = useState<bool>(false);
+    final photosState = ref.watch(childPhotosProvider(childId));
+    final photosNotifier = ref.read(childPhotosProvider(childId).notifier);
+
+    Future<void> _handleAvatarSelection(String photoUrl) async {
+      if (isLoading.value) return;
+
+      isLoading.value = true;
+
+      try {
+        final api = ref.read(backendApiProvider);
+        await api.updateChild(
+          id: childId,
+          faceUrl: photoUrl,
+        );
+
+        photosNotifier.setAvatar(photoUrl);
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Аватарка обновлена'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Ошибка обновления аватарки: ${e.toString().replaceAll('Exception: ', '')}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      } finally {
+        isLoading.value = false;
+      }
+    }
+
+    void _showAvatarSelectionDialog(String photoUrl) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (context) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Выбрать аватарку',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Сделать это фото главным?',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Отмена'),
+                  ),
+                  ElevatedButton(
+                    onPressed: isLoading.value
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            _handleAvatarSelection(photoUrl);
+                          },
+                    child: isLoading.value
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Сделать главным'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final displayPhotos = photosState.isNotEmpty 
+        ? photosState 
+        : (fallbackFaceUrl != null && fallbackFaceUrl!.isNotEmpty ? [fallbackFaceUrl!] : <String>[]);
+    final currentAvatar = displayPhotos.isNotEmpty ? displayPhotos.first : null;
+
+    return PhotoPreviewGrid(
+      existingPhotos: displayPhotos,
+      currentAvatarUrl: currentAvatar,
+      allowAvatarSelection: true,
+      onPhotoSelectedAsAvatar: (url) {
+        if (!isLoading.value) {
+          _showAvatarSelectionDialog(url);
+        }
+      },
+      maxPhotos: 5,
     );
   }
 }

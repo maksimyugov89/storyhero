@@ -635,6 +635,76 @@ class BackendApi {
     }
   }
 
+  /// Устанавливает главное фото (avatar) для ребенка
+  /// PUT /children/{child_id}/photos/avatar
+  /// 
+  /// Параметры:
+  /// - childId: ID ребенка
+  /// - photoUrl: URL фотографии, которую нужно сделать главной
+  /// 
+  /// Возвращает обновленный Child с новым faceUrl
+  Future<Child> setChildAvatar({
+    required String childId,
+    required String photoUrl,
+  }) async {
+    try {
+      print('[BackendApi] setChildAvatar: Установка avatar для ребенка $childId');
+      print('[BackendApi] setChildAvatar: URL фото: $photoUrl');
+      
+      final response = await _dio.put(
+        '/children/$childId/photos/avatar',
+        data: {
+          'photo_url': photoUrl,
+        },
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = response.data as Map<String, dynamic>;
+        final updatedChild = Child.fromJson(responseData);
+        
+        print('[ChildAvatar] set avatar success: $photoUrl');
+        print('[BackendApi] setChildAvatar: Avatar успешно установлен, новый faceUrl: ${updatedChild.faceUrl}');
+        
+        return updatedChild;
+      }
+      
+      throw Exception('Не удалось установить avatar: статус ${response.statusCode}');
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final errorMessage = e.response?.data?['detail']?.toString() ?? 
+                          e.response?.data?['message']?.toString() ?? 
+                          e.message ?? 
+                          'Неизвестная ошибка';
+
+      print('[BackendApi] setChildAvatar: Ошибка установки avatar - статус: $statusCode, сообщение: $errorMessage');
+
+      if (statusCode == 401) {
+        throw Exception('Требуется авторизация. Пожалуйста, войдите в аккаунт заново.');
+      }
+
+      if (statusCode == 404) {
+        throw Exception('Ребёнок или фото не найдены');
+      }
+
+      if (statusCode == 403) {
+        throw Exception('Нет прав на изменение этого ребёнка');
+      }
+
+      if (statusCode != null && statusCode >= 500) {
+        throw Exception('Сервер временно недоступен. Попробуйте позже.');
+      }
+
+      if (statusCode != null && statusCode >= 400) {
+        throw Exception('Ошибка сервера: $errorMessage');
+      }
+
+      rethrow;
+    } catch (e) {
+      print('[BackendApi] setChildAvatar: Неожиданная ошибка: $e');
+      rethrow;
+    }
+  }
+
   // Books
   Future<List<Book>> getBooks() async {
     const maxRetries = 2;

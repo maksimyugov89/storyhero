@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../core/utils/text_style_helpers.dart';
 
 /// Магический фон с рунами и вихрями из блесток
 class MagicRunicBackground extends StatefulWidget {
@@ -124,6 +125,10 @@ class _RunicArcPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (!size.width.isFinite || !size.height.isFinite || size.width <= 0 || size.height <= 0) {
+      return;
+    }
+    
     // Рисуем светящуюся дугу
     final arcPath = Path();
     final centerY = size.height * 0.25;
@@ -170,9 +175,10 @@ class _RunicArcPainter extends CustomPainter {
 
       runePaint.text = TextSpan(
         text: _runes[i % _runes.length],
-        style: TextStyle(
+        style: safeTextStyle(
           fontSize: 20,
           color: const Color(0xFFFFD93D).withOpacity(0.6),
+        ).copyWith(
           shadows: [
             Shadow(
               color: const Color(0xFFFFD93D).withOpacity(0.8),

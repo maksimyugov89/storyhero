@@ -32,20 +32,20 @@ class _FinalizationScreenState extends ConsumerState<FinalizationScreen> {
   Timer? _pollingTimer;
   bool _isFinalizing = false;
   String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _startFinalization();
-  }
+  bool _isDisposed = false;
+  bool _navigated = false;
 
   @override
   void dispose() {
+    _isDisposed = true;
     _pollingTimer?.cancel();
+    _pollingTimer = null;
     super.dispose();
   }
 
   Future<void> _startFinalization() async {
+    if (_isDisposed || !mounted) return;
+    
     setState(() {
       _isFinalizing = true;
       _errorMessage = null;
@@ -54,43 +54,68 @@ class _FinalizationScreenState extends ConsumerState<FinalizationScreen> {
     try {
       final api = ref.read(backendApiProvider);
       await api.finalizeBook(widget.bookId);
-      _startPolling();
+      if (!_isDisposed && mounted) {
+        _startPolling();
+      }
     } catch (e) {
-      setState(() {
-        _isFinalizing = false;
-        _errorMessage = 'Ошибка начала финализации: ${e.toString()}';
-      });
+      if (!_isDisposed && mounted) {
+        setState(() {
+          _isFinalizing = false;
+          _errorMessage = 'Ошибка начала финализации: ${e.toString()}';
+        });
+      }
     }
   }
 
   void _startPolling() {
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
-      if (!mounted) return;
+    if (_isDisposed) return;
+    
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      if (_isDisposed || !mounted) {
+        timer.cancel();
+        return;
+      }
 
       try {
         final bookAsync = ref.read(bookProvider(widget.bookId).future);
         final book = await bookAsync;
 
+        if (_isDisposed || !mounted) return;
+
         if (book.status == 'final') {
-          _pollingTimer?.cancel();
-          if (mounted) {
+          timer.cancel();
+          if (!_isDisposed && !_navigated && mounted) {
+            _navigated = true;
             Future.delayed(const Duration(milliseconds: 800), () {
-              if (mounted) {
+              if (!_isDisposed && mounted) {
                 context.go(RouteNames.bookView.replaceAll(':id', widget.bookId));
               }
             });
           }
         } else {
-          ref.invalidate(bookProvider(widget.bookId));
+          if (!_isDisposed && mounted) {
+            ref.invalidate(bookProvider(widget.bookId));
+          }
         }
       } catch (e) {
-        print('[FinalizationScreen] Polling error: $e');
+        if (!_isDisposed && mounted) {
+          print('[FinalizationScreen] Polling error: $e');
+        }
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_isDisposed && !_isFinalizing && _pollingTimer == null && _errorMessage == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed && mounted) {
+          _startFinalization();
+        }
+      });
+    }
+    
     final bookAsync = ref.watch(bookProvider(widget.bookId));
 
     return AppPage(

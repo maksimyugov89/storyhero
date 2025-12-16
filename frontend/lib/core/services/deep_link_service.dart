@@ -11,9 +11,12 @@ class DeepLinkService {
   StreamSubscription<Uri>? _linkSubscription;
   final AppLinks _appLinks = AppLinks();
   GoRouter? _router;
+  bool _isInitialized = false;
 
   /// Инициализирует обработку deep links
   Future<void> initialize(GoRouter router) async {
+    if (_isInitialized) return;
+    
     try {
       _router = router;
       
@@ -45,8 +48,11 @@ class DeepLinkService {
       }
       
       print('[DeepLinkService] Deep link service initialized successfully');
-    } catch (e) {
+      _isInitialized = true;
+    } catch (e, stackTrace) {
       print('[DeepLinkService] Error initializing: $e');
+      print('[DeepLinkService] Stack trace: $stackTrace');
+      _isInitialized = true;
     }
   }
   
@@ -63,9 +69,13 @@ class DeepLinkService {
         // Можно добавить обработку специфичных deep links в будущем
         print('[DeepLinkService] Processing deep link: ${uri.path}');
         
-        // Пример: storyhero://books/123 -> /books/123
+        // Пример: storyhero://books/123 -> /app/books/123
         if (uri.path.isNotEmpty && _router != null) {
-          final path = uri.path;
+          String path = uri.path;
+          // Убираем префикс если есть
+          if (!path.startsWith('/app/') && !path.startsWith('/auth/')) {
+            path = '/app$path';
+          }
           print('[DeepLinkService] Navigating to: $path');
           _router?.go(path);
         }
@@ -82,5 +92,6 @@ class DeepLinkService {
   void dispose() {
     _linkSubscription?.cancel();
     _linkSubscription = null;
+    _isInitialized = false;
   }
 }

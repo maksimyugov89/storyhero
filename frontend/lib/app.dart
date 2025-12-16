@@ -60,6 +60,16 @@ class _AppState extends ConsumerState<App> {
       theme: AppTheme.darkTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        final safeScaler = mq.textScaler;
+        return MediaQuery(
+          data: mq.copyWith(
+            textScaler: TextScaler.noScaling,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

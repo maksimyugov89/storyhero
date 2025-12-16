@@ -17,6 +17,7 @@ import '../../../../core/widgets/rounded_image.dart';
 import '../../../../ui/components/photo_preview_grid.dart';
 import '../../../../ui/components/asset_icon.dart';
 import '../presentation/children_list_screen.dart';
+import '../state/child_photos_provider.dart';
 import 'dart:io' if (dart.library.html) 'dart:html' as io;
 
 class ChildEditScreen extends HookConsumerWidget {
@@ -27,19 +28,6 @@ class ChildEditScreen extends HookConsumerWidget {
     required this.child,
   });
   
-  /// Получает все фото ребенка: сначала из массива photos, затем faceUrl если есть
-  static List<String> _getAllPhotos(Child child) {
-    final photos = <String>[];
-    // Добавляем фото из массива photos (если есть)
-    if (child.photos != null && child.photos!.isNotEmpty) {
-      photos.addAll(child.photos!);
-    }
-    // Добавляем faceUrl если его еще нет в списке
-    if (child.faceUrl != null && child.faceUrl!.isNotEmpty && !photos.contains(child.faceUrl)) {
-      photos.insert(0, child.faceUrl!); // faceUrl в начало
-    }
-    return photos;
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -52,9 +40,8 @@ class ChildEditScreen extends HookConsumerWidget {
     final isLoading = useState(false);
     final errorMessage = useState<String?>(null);
     final selectedPhotos = useState<List<io.File>>([]);
-    
-    // Получаем все существующие фото: сначала из массива photos, затем faceUrl
-    final existingPhotoUrls = useState<List<String>>(_getAllPhotos(child));
+    final photosState = ref.watch(childPhotosProvider(child.id));
+    final photosNotifier = ref.read(childPhotosProvider(child.id).notifier);
     final fadeAnimation = useAnimationController(
       duration: const Duration(milliseconds: 800),
     );
@@ -81,8 +68,9 @@ class ChildEditScreen extends HookConsumerWidget {
 
       try {
         final api = ref.read(backendApiProvider);
+        final photosNotifier = ref.read(childPhotosProvider(child.id).notifier);
         
-        await api.updateChild(
+        final updatedChild = await api.updateChild(
           id: child.id,
           name: nameController.text.trim(),
           age: age,
@@ -90,10 +78,14 @@ class ChildEditScreen extends HookConsumerWidget {
           fears: fearsController.text.trim(),
           character: characterController.text.trim(),
           moral: moralController.text.trim(),
-          faceUrl: existingPhotoUrls.value.isNotEmpty ? existingPhotoUrls.value.first : null,
+          faceUrl: photosState.isNotEmpty ? photosState.first : null,
           photos: selectedPhotos.value.isNotEmpty ? selectedPhotos.value : null,
-          existingPhotoUrls: existingPhotoUrls.value.isNotEmpty ? existingPhotoUrls.value : null,
+          existingPhotoUrls: photosState.isNotEmpty ? photosState : null,
         );
+
+        if (updatedChild.faceUrl != null && updatedChild.faceUrl!.isNotEmpty) {
+          photosNotifier.addPhoto(updatedChild.faceUrl!);
+        }
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -181,7 +173,7 @@ class ChildEditScreen extends HookConsumerWidget {
                 
                 // Фотографии
                 PhotoPreviewGrid(
-                  existingPhotos: existingPhotoUrls.value,
+                  existingPhotos: photosState,
                   selectedPhotos: selectedPhotos.value,
                   onPhotosChanged: (photos) {
                     selectedPhotos.value = photos;

@@ -83,7 +83,11 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen> {
             Center(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Вычисляем оптимальный размер, чтобы изображение поместилось целиком
+            if (!constraints.maxWidth.isFinite || !constraints.maxHeight.isFinite || 
+                constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+              return const SizedBox.shrink();
+            }
+            
             final imageWidth = constraints.maxWidth;
             final imageHeight = constraints.maxHeight;
             

@@ -29,9 +29,7 @@ class HomeScreen extends HookConsumerWidget {
       return null;
     }, []);
 
-    // Мемоизируем shortcuts, чтобы они не пересоздавались при каждом build
-    // Это предотвращает постоянные пересборки AssetIcon виджетов
-    final shortcuts = useMemoized(() => [
+    final shortcuts = [
       _HomeShortcut(
         label: 'Мои книги',
         icon: AppIcons.myBooks,
@@ -63,7 +61,7 @@ class HomeScreen extends HookConsumerWidget {
           colors: [AppColors.tertiary, AppColors.primary],
         ),
       ),
-    ], []);
+    ];
 
     return AppPage(
       backgroundImage: 'assets/logo/storyhero_bg_main.png',
