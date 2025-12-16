@@ -49,11 +49,23 @@ def create_task(fn: Callable, *args, meta: Optional[Dict[str, Any]] = None, **kw
             logger.info(f"✅ Задача {task_id} успешно завершена")
             mark_completed(task_id, result)
         except Exception as e:
-            error_msg = str(e)
+            # Извлекаем сообщение об ошибке
+            if hasattr(e, 'detail'):
+                # HTTPException имеет атрибут detail
+                error_msg = str(e.detail)
+            else:
+                error_msg = str(e)
+            
             logger.error(f"❌ Ошибка в задаче {task_id}: {error_msg}", exc_info=True)
-            TASKS[task_id]["status"] = "error"
-            TASKS[task_id]["error"] = error_msg
-            TASKS[task_id]["completed_at"] = datetime.now().isoformat()  # Добавляем время завершения даже при ошибке
+            
+            # Обновляем статус задачи на error
+            if task_id in TASKS:
+                TASKS[task_id]["status"] = "error"
+                TASKS[task_id]["error"] = error_msg
+                TASKS[task_id]["completed_at"] = datetime.now().isoformat()
+                logger.info(f"✅ Задача {task_id} обновлена: status=error, error={error_msg[:100]}")
+            else:
+                logger.warning(f"⚠️ Задача {task_id} не найдена в TASKS при обработке ошибки")
     
     asyncio.create_task(run_task())
     

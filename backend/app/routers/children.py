@@ -10,7 +10,7 @@ from ..db import get_db
 from ..models import Child, Book
 from ..schemas.book import BookOut
 # Удалено: больше не используем Supabase
-from ..services.local_file_service import upload_child_photo as upload_child_photo_service, BASE_UPLOAD_DIR
+from ..services.local_file_service import upload_child_photo as upload_child_photo_service, BASE_UPLOAD_DIR, get_server_base_url
 from ..core.deps import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,13 @@ class ChildCreateResponse(BaseModel):
     child_id: str  # UUID
 
 
+class ChildPhotoResponse(BaseModel):
+    """Модель для одной фотографии ребёнка"""
+    url: str
+    filename: str
+    is_avatar: bool
+
+
 class ChildResponse(BaseModel):
     """Формат ответа для GET запросов - соответствует формату Flutter"""
     id: str
@@ -44,7 +51,13 @@ class ChildResponse(BaseModel):
     fears: str
     character: str
     moral: str
-    face_url: Optional[str] = None  # URL фотографии (опционально)
+    face_url: Optional[str] = None  # URL главной фотографии (опционально, для обратной совместимости)
+    # ВРЕМЕННО: поле photos отключено для обратной совместимости с клиентом
+    # photos: Optional[List[ChildPhotoResponse]] = None  # Список всех фотографий (до 5 максимум)
+    
+    class Config:
+        # Позволяет игнорировать неизвестные поля при десериализации (для обратной совместимости)
+        extra = "ignore"
 
 
 class ChildUpdate(BaseModel):
@@ -161,6 +174,31 @@ def list_children(
     # Гарантируем, что все поля - строки (как ожидает Flutter)
     formatted_children = []
     for child in children:
+        # Автоматически обновляем face_url, если фотографии есть на диске, но face_url пустой
+        if not child.face_url:
+            photos_dir = os.path.join(BASE_UPLOAD_DIR, "children", str(child.id))
+            if os.path.exists(photos_dir):
+                # Ищем первую фотографию в директории
+                photo_files = [
+                    f for f in os.listdir(photos_dir)
+                    if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
+                ]
+                if photo_files:
+                    # Берем первую фотографию (сортируем для стабильности)
+                    photo_files.sort()
+                    first_photo = photo_files[0]
+                    base_url = get_server_base_url()
+                    face_url = f"{base_url}/static/children/{child.id}/{first_photo}"
+                    # Обновляем в БД
+                    child.face_url = face_url
+                    try:
+                        db.commit()
+                        db.refresh(child)
+                        logger.info(f"✓ Автоматически обновлен face_url для ребёнка {child.id}: {face_url}")
+                    except Exception as e:
+                        db.rollback()
+                        logger.warning(f"⚠ Не удалось обновить face_url для ребёнка {child.id}: {str(e)}")
+        
         # Преобразуем JSON поля в строки
         interests_str = ""
         if child.interests:
@@ -188,7 +226,7 @@ def list_children(
             fears=fears_str,
             character=str(child.personality) if child.personality else "",
             moral=str(child.moral) if child.moral else "",
-            face_url=child.face_url if child.face_url else None  # Используем face_url из модели
+            face_url=child.face_url if child.face_url else None
         ))
     
     return formatted_children
@@ -262,6 +300,31 @@ def get_child(
                 status_code=403,
                 detail="Нет прав доступа. Этот ребёнок принадлежит другому пользователю."
             )
+        
+        # Автоматически обновляем face_url, если фотографии есть на диске, но face_url пустой
+        if not child.face_url:
+            photos_dir = os.path.join(BASE_UPLOAD_DIR, "children", str(child.id))
+            if os.path.exists(photos_dir):
+                # Ищем первую фотографию в директории
+                photo_files = [
+                    f for f in os.listdir(photos_dir)
+                    if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
+                ]
+                if photo_files:
+                    # Берем первую фотографию (сортируем для стабильности)
+                    photo_files.sort()
+                    first_photo = photo_files[0]
+                    base_url = get_server_base_url()
+                    face_url = f"{base_url}/static/children/{child.id}/{first_photo}"
+                    # Обновляем в БД
+                    child.face_url = face_url
+                    try:
+                        db.commit()
+                        db.refresh(child)
+                        logger.info(f"✓ Автоматически обновлен face_url для ребёнка {child.id}: {face_url}")
+                    except Exception as e:
+                        db.rollback()
+                        logger.warning(f"⚠ Не удалось обновить face_url для ребёнка {child.id}: {str(e)}")
         
         # Преобразуем в формат ChildResponse
         return ChildResponse(

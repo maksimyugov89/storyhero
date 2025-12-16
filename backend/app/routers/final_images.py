@@ -5,11 +5,14 @@ from typing import List, Literal, Optional
 import requests
 import uuid
 import os
+import logging
 
 from ..db import get_db
 from ..models import Scene, Image, ThemeStyle, Book, Child
 from ..services.image_pipeline import generate_final_image
 from ..core.deps import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["final_images"])
 
@@ -90,7 +93,22 @@ async def _generate_final_images_internal(
                 from ..services.local_file_service import BASE_UPLOAD_DIR
                 child_photo_path = os.path.join(BASE_UPLOAD_DIR, relative_path)
         
-        final_url = await generate_final_image(enhanced_prompt, child_photo_path=child_photo_path, style=final_style)
+        try:
+            logger.info(f"🖼️ Генерация финального изображения для сцены order={scene.order}")
+            final_url = await generate_final_image(enhanced_prompt, child_photo_path=child_photo_path, style=final_style)
+            logger.info(f"✓ Финальное изображение сгенерировано для сцены order={scene.order}: {final_url}")
+        except HTTPException as e:
+            # HTTPException имеет атрибут detail, извлекаем его
+            error_message = f"Ошибка при генерации финального изображения для сцены order={scene.order}: {e.status_code}: {e.detail}"
+            logger.error(f"❌ {error_message}", exc_info=True)
+            raise
+        except Exception as e:
+            error_message = f"Ошибка при генерации финального изображения для сцены order={scene.order}: {str(e)}"
+            logger.error(f"❌ {error_message}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=error_message
+            )
         
         # Сохраняем или обновляем запись в БД
         image_record = db.query(Image).filter(

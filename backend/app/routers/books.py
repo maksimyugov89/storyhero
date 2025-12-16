@@ -138,6 +138,12 @@ async def generate_full_book_task(
             "book_id": book_id_str,
             "status": "success"  # Изменено: completed -> success для соответствия контракту
         }
+    except HTTPException as e:
+        # HTTPException имеет атрибут detail, извлекаем его
+        error_message = f"Ошибка при генерации книги: {e.detail}"
+        logger.error(f"❌ generate_full_book_task: {error_message}", exc_info=True)
+        logger.error(f"❌ generate_full_book_task: Детали ошибки - child_id={child_id}, user_id={user_id}, style={style}")
+        raise Exception(error_message)
     except Exception as e:
         error_message = f"Ошибка при генерации книги: {str(e)}"
         logger.error(f"❌ generate_full_book_task: {error_message}", exc_info=True)
@@ -684,13 +690,21 @@ def delete_book(
         # Удаление связанных данных происходит автоматически через CASCADE
         # Scene, Image, ThemeStyle удалятся автоматически благодаря ondelete="CASCADE"
         
+        # Сохраняем информацию о книге для логирования
+        book_title = book.title
+        book_child_id = book.child_id
+        
         # Удаляем книгу из БД
         db.delete(book)
+        # Явно делаем flush перед commit для гарантии атомарности
+        db.flush()
         db.commit()
         
-        logger.info(f"Книга {book_id} успешно удалена")
+        logger.info(f"✅ Книга {book_id} (title: '{book_title}', child_id: {book_child_id}) успешно удалена из БД")
+        logger.info(f"   После удаления книга больше не будет возвращаться в списках GET /books и GET /children/{{child_id}}/books")
         
         # 204 No Content - пустое тело ответа
+        # Клиент должен обновить список книг после получения этого статуса
         return None
         
     except HTTPException:

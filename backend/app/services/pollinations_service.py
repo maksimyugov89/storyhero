@@ -43,13 +43,34 @@ async def generate_raw_image(prompt: str) -> bytes:
         url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
         
         # Шаг 4: Скачиваем изображение
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.get(url)
+        # Уменьшаем таймаут до 90 секунд для более быстрой обработки ошибок
+        timeout = httpx.Timeout(90.0, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            try:
+                response = await client.get(url)
+            except httpx.TimeoutException as e:
+                raise HTTPException(
+                    status_code=504,
+                    detail="Превышено время ожидания генерации изображения (90 секунд). Сервис Pollinations.ai не отвечает. Попробуйте позже."
+                )
+            except httpx.RequestError as e:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Ошибка соединения с Pollinations.ai: {str(e)}"
+                )
             
             if response.status_code != 200:
+                error_text = response.text[:200] if response.text else "Нет деталей ошибки"
+                # Для 502 ошибки формируем более понятное сообщение
+                if response.status_code == 502:
+                    error_detail = f"Сервис генерации изображений временно недоступен (код 502). Попробуйте позже."
+                elif response.status_code == 504:
+                    error_detail = f"Сервис генерации изображений не отвечает (код 504). Попробуйте позже."
+                else:
+                    error_detail = f"Pollinations.ai вернул ошибку: {response.status_code} - {error_text}"
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Pollinations.ai вернул ошибку: {response.status_code} - {response.text[:200]}"
+                    detail=error_detail
                 )
             
             # Проверяем, что это изображение
@@ -75,7 +96,12 @@ async def generate_raw_image(prompt: str) -> bytes:
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=504,
-            detail="Timeout при генерации изображения через Pollinations.ai"
+            detail="Превышено время ожидания генерации изображения. Сервис Pollinations.ai не отвечает. Попробуйте позже."
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Ошибка соединения с Pollinations.ai: {str(e)}"
         )
     except Exception as e:
         raise HTTPException(

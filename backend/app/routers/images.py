@@ -80,9 +80,18 @@ async def _generate_draft_images_internal(
             logger.info(f"🖼️ Вызов generate_draft_image для сцены order={scene.order}")
             image_url = await generate_draft_image(enhanced_prompt, style=final_style)
             logger.info(f"✓ Изображение сгенерировано для сцены order={scene.order}: {image_url}")
-        except Exception as e:
-            logger.error(f"❌ Ошибка при генерации изображения для сцены order={scene.order}: {str(e)}", exc_info=True)
+        except HTTPException as e:
+            # HTTPException имеет атрибут detail, извлекаем его
+            error_message = f"Ошибка при генерации изображения для сцены order={scene.order}: {e.status_code}: {e.detail}"
+            logger.error(f"❌ {error_message}", exc_info=True)
             raise
+        except Exception as e:
+            error_message = f"Ошибка при генерации изображения для сцены order={scene.order}: {str(e)}"
+            logger.error(f"❌ {error_message}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=error_message
+            )
         
         # Сохраняем или обновляем запись в БД
         image_record = db.query(Image).filter(
