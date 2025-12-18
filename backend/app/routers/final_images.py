@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List, Literal, Optional
+from typing import List, Optional
 import requests
 import uuid
 import os
@@ -20,14 +20,14 @@ router = APIRouter(prefix="", tags=["final_images"])
 class GenerateFinalImagesRequest(BaseModel):
     book_id: str  # UUID как строка
     face_url: str
-    style: Literal["storybook", "cartoon", "pixar", "disney", "watercolor"] = None  # опционально, будет браться из ThemeStyle
+    style: Optional[str] = None  # опционально, будет браться из ThemeStyle
 
 
 class RegenerateSceneRequest(BaseModel):
     book_id: str  # UUID как строка
     scene_order: int
     face_url: str
-    style: Literal["storybook", "cartoon", "pixar", "disney", "watercolor"]
+    style: str
 
 
 async def _generate_final_images_internal(
@@ -35,7 +35,9 @@ async def _generate_final_images_internal(
     db: Session,
     current_user_id: str,
     final_style: str = None,
-    face_url: Optional[str] = None
+    face_url: Optional[str] = None,
+    task_id: Optional[str] = None,
+    child_photos: Optional[list[str]] = None
 ) -> dict:
     """
     Внутренняя функция для генерации финальных изображений.
@@ -76,9 +78,26 @@ async def _generate_final_images_internal(
     
     results = []
     
-    for scene in scenes:
-        if not scene.image_prompt:
-            continue
+    # Подсчитываем сцены с промптами
+    scenes_with_prompts = [s for s in scenes if s.image_prompt]
+    
+    # Обновляем прогресс с общим количеством изображений
+    if task_id:
+        from ..services.tasks import update_task_progress
+        update_task_progress(task_id, {
+            "total_images": len(scenes_with_prompts),
+            "images_generated": 0
+        })
+    
+    for idx, scene in enumerate(scenes_with_prompts, 1):
+        # Проверяем, что книга все еще существует (может быть удалена во время генерации)
+        book_check = db.query(Book).filter(Book.id == book_uuid).first()
+        if not book_check:
+            logger.warning(f"⚠️ Книга {book_id} была удалена во время генерации. Прерываем генерацию финальных изображений.")
+            raise HTTPException(
+                status_code=410,
+                detail="Книга была удалена во время генерации. Генерация прервана."
+            )
         
         # Формируем промпт с финальным стилем
         enhanced_prompt = f"Visual style: {final_style}. {scene.image_prompt}"
@@ -95,7 +114,21 @@ async def _generate_final_images_internal(
         
         try:
             logger.info(f"🖼️ Генерация финального изображения для сцены order={scene.order}")
-            final_url = await generate_final_image(enhanced_prompt, child_photo_path=child_photo_path, style=final_style)
+            
+            # Обновляем прогресс
+            if task_id:
+                from ..services.tasks import update_task_progress
+                update_task_progress(task_id, {
+                    "images_generated": idx - 1,
+                    "message": f"Генерация финального изображения {idx}/{len(scenes_with_prompts)} с face swap..."
+                })
+            
+            final_url = await generate_final_image(
+                enhanced_prompt, 
+                child_photo_path=child_photo_path, 
+                style=final_style,
+                child_photo_paths=child_photos
+            )
             logger.info(f"✓ Финальное изображение сгенерировано для сцены order={scene.order}: {final_url}")
         except HTTPException as e:
             # HTTPException имеет атрибут detail, извлекаем его
@@ -110,31 +143,51 @@ async def _generate_final_images_internal(
                 detail=error_message
             )
         
+        # Проверяем существование книги перед сохранением
+        book_check = db.query(Book).filter(Book.id == book_uuid).first()
+        if not book_check:
+            logger.warning(f"⚠️ Книга {book_id} была удалена после генерации изображения для сцены order={scene.order}. Пропускаем сохранение.")
+            continue  # Пропускаем сохранение, но продолжаем генерацию остальных
+        
         # Сохраняем или обновляем запись в БД
-        image_record = db.query(Image).filter(
-            Image.book_id == book_uuid,
-            Image.scene_order == scene.order
-        ).first()
-        
-        if image_record:
-            image_record.final_url = final_url
-            image_record.style = final_style
-        else:
-            image_record = Image(
-                book_id=book_uuid,
-                scene_order=scene.order,
-                final_url=final_url,
-                style=final_style
-            )
-            db.add(image_record)
-        
-        results.append({
-            "order": scene.order,
-            "image_url": final_url,
-            "style": final_style
-        })
-    
-    db.commit()
+        try:
+            image_record = db.query(Image).filter(
+                Image.book_id == book_uuid,
+                Image.scene_order == scene.order
+            ).first()
+            
+            if image_record:
+                image_record.final_url = final_url
+                image_record.style = final_style
+            else:
+                image_record = Image(
+                    book_id=book_uuid,
+                    scene_order=scene.order,
+                    final_url=final_url,
+                    style=final_style
+                )
+                db.add(image_record)
+            
+            db.commit()
+            
+            results.append({
+                "order": scene.order,
+                "image_url": final_url,
+                "style": final_style
+            })
+            
+            # Обновляем прогресс после успешной генерации
+            if task_id:
+                from ..services.tasks import update_task_progress
+                update_task_progress(task_id, {
+                    "images_generated": idx,
+                    "message": f"Финальное изображение {idx}/{len(scenes_with_prompts)} готово ✓"
+                })
+        except Exception as db_error:
+            logger.error(f"❌ Ошибка при сохранении изображения в БД для сцены order={scene.order}: {str(db_error)}", exc_info=True)
+            db.rollback()
+            # Продолжаем генерацию остальных изображений
+            continue
     
     return {"images": results}
 

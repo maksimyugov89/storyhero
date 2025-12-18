@@ -4,8 +4,9 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Literal, Optional
+from typing import Optional
 from uuid import UUID
+from datetime import datetime, timezone
 
 from ..db import get_db
 from ..models import Book, Child, Image, ThemeStyle
@@ -13,6 +14,14 @@ from ..schemas.book import BookCreate, BookUpdate, BookOut, SceneOut
 from ..services.tasks import create_task, get_task_status, find_running_task
 from ..services.local_file_service import BASE_UPLOAD_DIR
 from ..core.deps import get_current_user
+from ..config.styles import (
+    normalize_style,
+    is_style_known,
+    is_premium_style,
+    check_style_access,
+    deactivate_if_expired,
+    ALL_STYLES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +29,10 @@ router = APIRouter(prefix="/books", tags=["books"])
 
 
 class GenerateFullBookRequest(BaseModel):
-    """Запрос на генерацию книги - принимает только child_id и style"""
+    """Запрос на генерацию книги - принимает child_id, style и num_pages"""
     child_id: str
-    style: Literal["storybook", "cartoon", "pixar", "disney", "watercolor"] = "storybook"
+    style: str = "classic"
+    num_pages: int = 20  # 10 или 20 страниц (без обложки)
 
 
 async def generate_full_book_task(
@@ -36,7 +46,10 @@ async def generate_full_book_task(
     style: str,
     user_id: str,
     db: Session,
-    child_id: Optional[int] = None
+    child_id: Optional[int] = None,
+    task_id: Optional[str] = None,
+    num_pages: int = 20,
+    child_photos: Optional[list[str]] = None
 ):
     """Полный цикл генерации книги
     
@@ -52,11 +65,34 @@ async def generate_full_book_task(
     from ..routers.images import ImageRequest, _generate_draft_images_internal
     from ..routers.final_images import _generate_final_images_internal
     
+    from ..services.tasks import update_task_progress
+    
     try:
+        # ВАЖНО: проверка подписки внутри задачи (чтобы нельзя было обойти через прямой запуск фоновой задачи)
+        normalized_style = normalize_style(style)
+        if not is_style_known(normalized_style):
+            raise HTTPException(status_code=400, detail=f"Неизвестный стиль: {style}. Доступные: {', '.join(ALL_STYLES)}")
+
+        # Чистим истёкшие подписки пользователя перед проверкой
+        deactivate_if_expired(db, user_id)
+
+        if is_premium_style(normalized_style) and not check_style_access(db, user_id, normalized_style):
+            raise HTTPException(
+                status_code=403,
+                detail="Этот стиль доступен только по подписке. Оформите подписку за 199 ₽/мес"
+            )
+
         logger.info(f"🚀 Начало генерации книги для child_id={child_id}, user_id={user_id}")
         
         # Шаг 1: Создать профиль (если child_id не передан)
         if child_id is None:
+            if task_id:
+                update_task_progress(task_id, {
+                    "stage": "creating_profile",
+                    "current_step": 1,
+                    "total_steps": 7,
+                    "message": "Создание профиля ребёнка..."
+                })
             logger.info("📝 Шаг 1: Создание нового профиля")
             profile_request = CreateProfileRequest(
                 name=name,
@@ -73,8 +109,15 @@ async def generate_full_book_task(
             logger.info(f"✓ Используем существующий профиль: child_id={child_id}")
         
         # Шаг 2: Создать сюжет
-        logger.info(f"📖 Шаг 2: Создание сюжета для child_id={child_id}")
-        plot_request = CreatePlotRequest(child_id=child_id)
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "creating_plot",
+                "current_step": 2,
+                "total_steps": 7,
+                "message": "Создание сюжета истории..."
+            })
+        logger.info(f"📖 Шаг 2: Создание сюжета для child_id={child_id} (num_pages={num_pages})")
+        plot_request = CreatePlotRequest(child_id=child_id, num_pages=num_pages)
         plot_result = await _create_plot_internal(plot_request, db, user_id)
         book_id_str = plot_result.book_id  # UUID как строка
         logger.info(f"✓ Сюжет создан: book_id={book_id_str}")
@@ -94,43 +137,113 @@ async def generate_full_book_task(
             db.commit()
         
         # Шаг 3: Создать текст
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "creating_text",
+                "current_step": 3,
+                "total_steps": 7,
+                "message": "Генерация текста истории..."
+            })
         logger.info(f"✍️ Шаг 3: Создание текста для book_id={book_id_str}")
         text_request = CreateTextRequest(book_id=book_id_str)
         await _create_text_internal(text_request, db, user_id)
         logger.info("✓ Текст создан")
         
+        # ВАЖНО: После создания текста пользователь может его редактировать
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "text_ready",
+                "current_step": 3,
+                "total_steps": 7,
+                "message": "Текст готов! Вы можете редактировать его пока генерируются изображения.",
+                "book_id": book_id_str
+            })
+        
         # Шаг 4: Создать промпты для изображений
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "creating_prompts",
+                "current_step": 4,
+                "total_steps": 7,
+                "message": "Создание промптов для изображений..."
+            })
         logger.info(f"🎨 Шаг 4: Создание промптов для изображений")
         prompts_request = CreateImagePromptsRequest(book_id=book_id_str)
         await _create_image_prompts_internal(prompts_request, db, user_id)
         logger.info("✓ Промпты созданы")
         
-        # Шаг 5: Автоматически выбрать стиль
+        # Шаг 5: Выбрать стиль (manual по запросу фронтенда)
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "selecting_style",
+                "current_step": 5,
+                "total_steps": 7,
+                "message": "Выбор стиля иллюстраций..."
+            })
         logger.info(f"🎭 Шаг 5: Выбор стиля")
         from ..routers.style import SelectStyleRequest, _select_style_internal
-        style_request = SelectStyleRequest(book_id=book_id_str, mode="auto")
+        style_request = SelectStyleRequest(book_id=book_id_str, mode="manual", style=normalized_style)
         style_result = await _select_style_internal(style_request, db, user_id)
         final_style = style_result.final_style
         logger.info(f"✓ Стиль выбран: {final_style}")
         
         # Шаг 6: Генерировать черновые изображения
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "generating_images",
+                "current_step": 6,
+                "total_steps": 7,
+                "message": "Генерация изображений...",
+                "images_generated": 0,
+                "total_images": 0
+            })
         logger.info(f"🖼️ Шаг 6: Генерация черновых изображений")
         from ..routers.images import ImageRequest, _generate_draft_images_internal
         draft_request = ImageRequest(book_id=book_id_str, face_url=face_url)
-        await _generate_draft_images_internal(draft_request, db, user_id, final_style=final_style)
+        # Передаем task_id для обновления прогресса
+        await _generate_draft_images_internal(draft_request, db, user_id, final_style=final_style, task_id=task_id)
         logger.info("✓ Черновые изображения созданы")
         
         # Шаг 7: Генерировать финальные изображения
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "generating_final_images",
+                "current_step": 7,
+                "total_steps": 7,
+                "message": "Генерация финальных изображений с face swap...",
+                "images_generated": 0,
+                "total_images": 0
+            })
         logger.info(f"✨ Шаг 7: Генерация финальных изображений")
         from ..routers.final_images import _generate_final_images_internal
-        await _generate_final_images_internal(
-            book_id=book_id_str,
-            db=db,
-            current_user_id=user_id,
-            final_style=final_style,
-            face_url=face_url
-        )
-        logger.info("✓ Финальные изображения созданы")
+        try:
+            await _generate_final_images_internal(
+                book_id=book_id_str,
+                db=db,
+                current_user_id=user_id,
+                final_style=final_style,
+                face_url=face_url,
+                task_id=task_id,
+                child_photos=child_photos
+            )
+            logger.info("✓ Финальные изображения созданы")
+        except HTTPException as e:
+            # Если книга была удалена (410), это не критическая ошибка
+            if e.status_code == 410:
+                logger.warning(f"⚠️ Книга была удалена во время генерации финальных изображений. Генерация прервана.")
+                raise Exception(f"Книга была удалена во время генерации: {e.detail}")
+            # Для других HTTP ошибок пробрасываем как есть
+            raise Exception(f"Ошибка при генерации финальных изображений: {e.detail}")
+        
+        # Генерация завершена
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "images_ready",
+                "current_step": 7,
+                "total_steps": 7,
+                "message": "Рендеринг изображений завершён! Теперь вы можете редактировать их.",
+                "book_id": book_id_str
+            })
         
         logger.info(f"✅ Генерация книги завершена: book_id={book_id_str}, child_id={child_id}")
         return {
@@ -269,20 +382,61 @@ async def generate_full_book_endpoint(
         moral = child.moral or ""
         face_url = child.face_url or ""
         
-        # 8. Валидация стиля
-        valid_styles = ["storybook", "cartoon", "pixar", "disney", "watercolor"]
-        if data.style and data.style not in valid_styles:
-            logger.error(f"❌ generate_full_book: Неверный стиль: {data.style}")
+        # 7.1. Получаем все фотографии ребёнка (до 5 штук) для лучшего face swap
+        import os
+        from ..services.local_file_service import BASE_UPLOAD_DIR
+        child_photos = []
+        photos_dir = os.path.join(BASE_UPLOAD_DIR, "children", str(child_id_int))
+        if os.path.exists(photos_dir):
+            photo_files = [
+                f for f in os.listdir(photos_dir)
+                if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
+            ]
+            # Сортируем и берем до 5 фото
+            photo_files = sorted(photo_files)[:5]
+            from ..services.local_file_service import get_server_base_url
+            base_url = get_server_base_url()
+            child_photos = [
+                os.path.join(photos_dir, filename) for filename in photo_files
+            ]
+            logger.info(f"📸 Найдено фотографий ребёнка: {len(child_photos)}")
+        else:
+            # Если нет директории, используем face_url если есть
+            if face_url:
+                # Преобразуем URL в локальный путь
+                if "/static/children/" in face_url:
+                    filename = face_url.split("/static/children/")[1].split("/")[-1]
+                    photo_path = os.path.join(photos_dir, filename)
+                    if os.path.exists(photo_path):
+                        child_photos = [photo_path]
+                        logger.info(f"📸 Используем face_url как фото: {photo_path}")
+        
+        # 8. Валидация num_pages (только 10 или 20 — как на фронтенде)
+        num_pages = data.num_pages if hasattr(data, 'num_pages') and data.num_pages else 20
+        if num_pages not in (10, 20):
+            raise HTTPException(status_code=400, detail="Количество страниц должно быть 10 или 20")
+        
+        # 9. Валидация стиля (25 стилей) + алиасы (storybook -> classic)
+        normalized_style = normalize_style(data.style)
+        if not is_style_known(normalized_style):
+            raise HTTPException(status_code=400, detail=f"Неизвестный стиль: {data.style}. Доступные: {', '.join(ALL_STYLES)}")
+
+        # 9.1 Проверка подписки ПЕРЕД стартом генерации (и чистка истёкших подписок)
+        deactivate_if_expired(db, user_id)
+        if is_premium_style(normalized_style) and not check_style_access(db, user_id, normalized_style):
             raise HTTPException(
-                status_code=400,
-                detail=f"Неверный стиль: '{data.style}'. Доступные стили: {', '.join(valid_styles)}"
+                status_code=403,
+                detail="Этот стиль доступен только по подписке. Оформите подписку за 199 ₽/мес"
             )
         
         # 9. Метаданные для проверки дубликатов
         meta = {"user_id": user_id, "child_id": str(child.id)}
 
         # 10. Создаем новую задачу
-        logger.info(f"✅ generate_full_book: Создание задачи для child_id={child_id_int}, style={data.style}")
+        logger.info(f"✅ generate_full_book: Создание задачи для child_id={child_id_int}, style={normalized_style}")
+        # Сначала создаем task_id, чтобы передать его в функцию
+        import uuid as uuid_module
+        task_id = str(uuid_module.uuid4())
         task_id = create_task(
             generate_full_book_task,
             name,
@@ -292,11 +446,14 @@ async def generate_full_book_endpoint(
             personality,
             moral,
             face_url,
-            data.style,
+            normalized_style,
             user_id,
             db,
             child_id=child_id_int,
-            meta=meta
+            num_pages=num_pages,
+            child_photos=child_photos,
+            meta=meta,
+            task_id=task_id
         )
         
         logger.info(f"✅ generate_full_book: Задача создана: task_id={task_id}")
@@ -340,7 +497,17 @@ def get_task_status_endpoint(
             "result": object | null,
             "error": "string | null",
             "completed_at": "ISO datetime string | null",
-            "meta": object
+            "meta": object,
+            "progress": {
+                "stage": "creating_profile | creating_plot | creating_text | text_ready | creating_prompts | selecting_style | generating_images | generating_final_images | images_ready",
+                "current_step": int,
+                "total_steps": int,
+                "message": string,
+                "images_generated": int,
+                "total_images": int,
+                "percent": int (0-100),
+                "book_id": string | null
+            }
         }
     
     Raises:
@@ -366,6 +533,69 @@ def get_task_status_endpoint(
     if current_status not in valid_statuses:
         logger.warning(f"⚠️ get_task_status: Неожиданный статус задачи {task_id}: {current_status}, нормализуем в 'error'")
         task_status["status"] = "error"
+    
+    # Вычисляем процент выполнения для фронтенда
+    progress = task_status.get("progress", {})
+    if progress:
+        current_step = progress.get("current_step", 0)
+        total_steps = progress.get("total_steps", 7)
+        images_generated = progress.get("images_generated", 0)
+        total_images = progress.get("total_images", 0)
+        stage = progress.get("stage", "starting")
+        pages_rendered = progress.get("pages_rendered", 0)
+        total_pages = progress.get("total_pages", 0)
+        
+        # Вычисляем общий процент
+        # Шаги 1-5 занимают 30% (по 6% на шаг)
+        # Шаги 6-7 (генерация изображений) занимают 70% (по 35% на шаг)
+        if stage in ["generating_images", "generating_final_images"]:
+            # При генерации изображений учитываем прогресс по изображениям
+            base_percent = 30  # Шаги 1-5 завершены
+            if stage == "generating_final_images":
+                base_percent = 65  # Шаги 1-6 завершены
+            
+            if total_images > 0:
+                image_progress = (images_generated / total_images) * 35
+            else:
+                image_progress = 0
+            
+            percent = int(base_percent + image_progress)
+        elif stage in ["rendering_pdf", "pdf_ready"]:
+            # PDF — финальный этап, отображаем как 90-100%
+            if total_pages and total_pages > 0:
+                pdf_progress = (pages_rendered / total_pages) * 10
+            else:
+                pdf_progress = 0
+            base_percent = 90
+            percent = int(base_percent + pdf_progress)
+        elif stage == "images_ready":
+            percent = 100
+        elif current_status == "success":
+            percent = 100
+        elif current_status == "error":
+            # Оставляем процент на момент ошибки
+            percent = int((current_step / total_steps) * 100) if total_steps > 0 else 0
+        else:
+            # Для этапов 1-5
+            percent = int((current_step / total_steps) * 30) if total_steps > 0 else 0
+        
+        # Гарантируем, что процент в диапазоне 0-100
+        percent = max(0, min(100, percent))
+        progress["percent"] = percent
+        
+        # Обновляем progress в ответе
+        task_status["progress"] = progress
+    else:
+        # Если progress пустой, добавляем базовый
+        task_status["progress"] = {
+            "stage": "starting",
+            "current_step": 0,
+            "total_steps": 7,
+            "message": "Инициализация...",
+            "images_generated": 0,
+            "total_images": 0,
+            "percent": 0
+        }
     
     return task_status
 

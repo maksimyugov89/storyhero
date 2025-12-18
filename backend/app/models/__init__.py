@@ -6,5 +6,9 @@ from .scene import Scene  # Импортируется после Book
 from .image import Image
 from .style import ThemeStyle
 from .user import User
+from .text_version import TextVersion
+from .image_version import ImageVersion
+from .print_order import PrintOrder
+from .subscription import Subscription
 
-__all__ = ["Child", "Book", "Scene", "Image", "ThemeStyle", "User"]
+__all__ = ["Child", "Book", "Scene", "Image", "ThemeStyle", "User", "TextVersion", "ImageVersion", "PrintOrder", "Subscription"]

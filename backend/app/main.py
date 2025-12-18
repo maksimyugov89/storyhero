@@ -68,7 +68,9 @@ from sqlalchemy import text
 from .db import get_db, init_db
 from .services.local_file_service import BASE_UPLOAD_DIR
 from .services.cleanup_service import cleanup_old_drafts
+from .services.subscription_service import check_expired_subscriptions
 from .routers import (
+    book_editing,
     profile,
     plot,
     text as text_router,
@@ -82,6 +84,9 @@ from .routers import (
     children,
     upload,
     auth,
+    payments,
+    orders,
+    subscription,
 )
 
 app = FastAPI(
@@ -123,6 +128,7 @@ app.include_router(image_prompts.router)
 app.include_router(images.router)
 app.include_router(books.router)
 app.include_router(books_workflow.router)  # Workflow endpoints для книг
+app.include_router(book_editing.router)  # Редактирование книг (версии текста и изображений)
 app.include_router(final_images.router)
 app.include_router(style.router)
 app.include_router(auth_info.router)
@@ -130,6 +136,38 @@ app.include_router(auth_info.router)
 # чтобы /children/{child_id}/photos имел приоритет над /children/photos
 app.include_router(children.router)
 app.include_router(upload.router)
+# Платежи и заказы
+app.include_router(payments.router)
+app.include_router(orders.router)
+app.include_router(subscription.router)
+
+# -----------------------------------------------------------------------------
+# BACKWARD/FRONTEND COMPAT: /api/v1 prefix
+# -----------------------------------------------------------------------------
+# Flutter в проде использует baseUrl вида https://storyhero.ru/api/v1
+# Nginx проксирует запросы "как есть" (без strip), поэтому FastAPI должен
+# поддерживать маршруты и с префиксом /api/v1/*.
+API_V1_PREFIX = "/api/v1"
+
+app.include_router(auth.router, prefix=API_V1_PREFIX)
+app.include_router(profile.router, prefix=API_V1_PREFIX)
+app.include_router(plot.router, prefix=API_V1_PREFIX)
+app.include_router(text_router.router, prefix=API_V1_PREFIX)
+app.include_router(image_prompts.router, prefix=API_V1_PREFIX)
+app.include_router(images.router, prefix=API_V1_PREFIX)
+app.include_router(books.router, prefix=API_V1_PREFIX)
+app.include_router(books_workflow.router, prefix=API_V1_PREFIX)
+app.include_router(book_editing.router, prefix=API_V1_PREFIX)
+app.include_router(final_images.router, prefix=API_V1_PREFIX)
+app.include_router(style.router, prefix=API_V1_PREFIX)
+app.include_router(auth_info.router, prefix=API_V1_PREFIX)
+# Важно: children.router перед upload.router, чтобы /children/{child_id}/photos имел приоритет
+app.include_router(children.router, prefix=API_V1_PREFIX)
+app.include_router(upload.router, prefix=API_V1_PREFIX)
+# Платежи и заказы
+app.include_router(payments.router, prefix=API_V1_PREFIX)
+app.include_router(orders.router, prefix=API_V1_PREFIX)
+app.include_router(subscription.router, prefix=API_V1_PREFIX)
 
 # Инициализируем БД при запуске
 @app.on_event("startup")
@@ -159,6 +197,8 @@ async def startup_event():
         scheduler = AsyncIOScheduler()
         # Каждый день в 04:00 по серверному времени
         scheduler.add_job(cleanup_old_drafts, "cron", hour=4, minute=0)
+        # Каждый день в 04:10 деактивируем истёкшие подписки
+        scheduler.add_job(check_expired_subscriptions, "cron", hour=4, minute=10)
         scheduler.start()
         logger.info("✓ Планировщик очистки черновиков запущен (ежедневно в 04:00)")
     except Exception as e:
