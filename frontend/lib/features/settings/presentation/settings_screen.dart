@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../subscription/data/subscription_provider.dart';
 import '../../../core/presentation/layouts/app_page.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
@@ -132,9 +133,8 @@ class SettingsScreen extends ConsumerWidget {
                         }
                         return Row(
                           children: [
-                            Icon(
-                              Icons.email,
-                              color: AppColors.primary,
+                            AssetIcon(
+                              assetPath: AppIcons.email,
                               size: 20,
                             ),
                             const SizedBox(width: AppSpacing.sm),
@@ -162,6 +162,11 @@ class SettingsScreen extends ConsumerWidget {
               
               const SizedBox(height: AppSpacing.lg),
               
+              // Подписка
+              _SubscriptionCard(),
+              
+              const SizedBox(height: AppSpacing.lg),
+              
               // Приложение
               AppMagicCard(
                 padding: AppSpacing.paddingLG,
@@ -175,14 +180,9 @@ class SettingsScreen extends ConsumerWidget {
                     const SizedBox(height: AppSpacing.md),
                     _SettingsItem(
                       icon: AppIcons.help,
-                      title: 'Помощь',
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Помощь скоро будет доступна'),
-                          ),
-                        );
-                      },
+                      title: 'Помощь и поддержка',
+                      subtitle: 'Связаться с разработчиком',
+                      onTap: () => context.push(RouteNames.help),
                     ),
                     const Divider(),
                     _SettingsItem(
@@ -270,6 +270,94 @@ class _SettingsItem extends StatelessWidget {
                 Icons.chevron_right,
                 color: AppColors.onSurfaceVariant,
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubscriptionCard extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final subscriptionState = ref.watch(subscriptionProvider);
+    final isSubscribed = subscriptionState.isSubscribed;
+
+    return GestureDetector(
+      onTap: () => context.push(RouteNames.subscription),
+      child: AppMagicCard(
+        padding: AppSpacing.paddingLG,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isSubscribed
+                          ? [Colors.green.shade400, Colors.green.shade600]
+                          : [Colors.amber.shade400, Colors.orange.shade600],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    isSubscribed ? Icons.verified : Icons.workspace_premium,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Подписка',
+                        style: AppTypography.headlineSmall,
+                      ),
+                      Text(
+                        isSubscribed
+                            ? '✅ Активна — все стили доступны'
+                            : '20 премиум стилей за 199 ₽/мес',
+                        style: safeCopyWith(
+                          AppTypography.bodySmall,
+                          color: isSubscribed ? Colors.green : AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ],
+            ),
+            if (!isSubscribed) ...[
+              const SizedBox(height: AppSpacing.md),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.amber.shade400, Colors.orange.shade400],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '⭐ Оформить подписку',
+                  style: safeCopyWith(
+                    AppTypography.labelMedium,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
           ],
         ),
       ),

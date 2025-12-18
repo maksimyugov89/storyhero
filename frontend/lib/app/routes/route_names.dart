@@ -17,12 +17,18 @@ class RouteNames {
   static const String bookView = '/app/books/:id';
   static const String bookSceneEdit = '/app/books/:id/scene/:index';
   static const String bookTextEdit = '/app/books/:id/scene/:index/text';
+  static const String bookImageEdit = '/app/books/:id/scene/:index/image';
   static const String bookFinalize = '/app/books/:id/finalize';
+  static const String bookFinalizePreview = '/app/books/:id/finalize/preview';
+  static const String bookComplete = '/app/books/:id/complete';
+  static const String bookOrder = '/app/books/:id/order';
   
   static const String generate = '/app/generate';
   static const String taskStatus = '/app/tasks/:id';
   
   static const String settings = '/app/settings';
+  static const String help = '/app/settings/help';
+  static const String subscription = '/app/settings/subscription';
   static const String payment = '/app/payment/:bookId';
 }
 

@@ -36,7 +36,9 @@ mixin _$Book {
   @JsonKey(name: 'cover_url')
   String? get coverUrl => throw _privateConstructorUsedError;
   @JsonKey(name: 'final_pdf_url')
-  String? get finalPdfUrl => throw _privateConstructorUsedError;
+  String? get finalPdfUrl => throw _privateConstructorUsedError; // Статус оплаты книги
+  @JsonKey(name: 'is_paid')
+  bool get isPaid => throw _privateConstructorUsedError;
   @JsonKey(name: 'pages')
   List<dynamic>? get pages => throw _privateConstructorUsedError;
   @JsonKey(name: 'edit_history')
@@ -67,6 +69,7 @@ abstract class $BookCopyWith<$Res> {
     @JsonKey(name: 'status') String status,
     @JsonKey(name: 'cover_url') String? coverUrl,
     @JsonKey(name: 'final_pdf_url') String? finalPdfUrl,
+    @JsonKey(name: 'is_paid') bool isPaid,
     @JsonKey(name: 'pages') List<dynamic>? pages,
     @JsonKey(name: 'edit_history') List<dynamic>? editHistory,
     @JsonKey(name: 'images_final') List<dynamic>? imagesFinal,
@@ -96,6 +99,7 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
     Object? status = null,
     Object? coverUrl = freezed,
     Object? finalPdfUrl = freezed,
+    Object? isPaid = null,
     Object? pages = freezed,
     Object? editHistory = freezed,
     Object? imagesFinal = freezed,
@@ -134,6 +138,10 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
                 ? _value.finalPdfUrl
                 : finalPdfUrl // ignore: cast_nullable_to_non_nullable
                       as String?,
+            isPaid: null == isPaid
+                ? _value.isPaid
+                : isPaid // ignore: cast_nullable_to_non_nullable
+                      as bool,
             pages: freezed == pages
                 ? _value.pages
                 : pages // ignore: cast_nullable_to_non_nullable
@@ -169,6 +177,7 @@ abstract class _$$BookImplCopyWith<$Res> implements $BookCopyWith<$Res> {
     @JsonKey(name: 'status') String status,
     @JsonKey(name: 'cover_url') String? coverUrl,
     @JsonKey(name: 'final_pdf_url') String? finalPdfUrl,
+    @JsonKey(name: 'is_paid') bool isPaid,
     @JsonKey(name: 'pages') List<dynamic>? pages,
     @JsonKey(name: 'edit_history') List<dynamic>? editHistory,
     @JsonKey(name: 'images_final') List<dynamic>? imagesFinal,
@@ -195,6 +204,7 @@ class __$$BookImplCopyWithImpl<$Res>
     Object? status = null,
     Object? coverUrl = freezed,
     Object? finalPdfUrl = freezed,
+    Object? isPaid = null,
     Object? pages = freezed,
     Object? editHistory = freezed,
     Object? imagesFinal = freezed,
@@ -233,6 +243,10 @@ class __$$BookImplCopyWithImpl<$Res>
             ? _value.finalPdfUrl
             : finalPdfUrl // ignore: cast_nullable_to_non_nullable
                   as String?,
+        isPaid: null == isPaid
+            ? _value.isPaid
+            : isPaid // ignore: cast_nullable_to_non_nullable
+                  as bool,
         pages: freezed == pages
             ? _value._pages
             : pages // ignore: cast_nullable_to_non_nullable
@@ -263,6 +277,7 @@ class _$BookImpl implements _Book {
     @JsonKey(name: 'status') this.status = 'draft',
     @JsonKey(name: 'cover_url') this.coverUrl,
     @JsonKey(name: 'final_pdf_url') this.finalPdfUrl,
+    @JsonKey(name: 'is_paid') this.isPaid = false,
     @JsonKey(name: 'pages') final List<dynamic>? pages,
     @JsonKey(name: 'edit_history') final List<dynamic>? editHistory,
     @JsonKey(name: 'images_final') final List<dynamic>? imagesFinal,
@@ -299,6 +314,10 @@ class _$BookImpl implements _Book {
   @override
   @JsonKey(name: 'final_pdf_url')
   final String? finalPdfUrl;
+  // Статус оплаты книги
+  @override
+  @JsonKey(name: 'is_paid')
+  final bool isPaid;
   final List<dynamic>? _pages;
   @override
   @JsonKey(name: 'pages')
@@ -334,7 +353,7 @@ class _$BookImpl implements _Book {
 
   @override
   String toString() {
-    return 'Book(id: $id, childId: $childId, userId: $userId, title: $title, createdAt: $createdAt, status: $status, coverUrl: $coverUrl, finalPdfUrl: $finalPdfUrl, pages: $pages, editHistory: $editHistory, imagesFinal: $imagesFinal)';
+    return 'Book(id: $id, childId: $childId, userId: $userId, title: $title, createdAt: $createdAt, status: $status, coverUrl: $coverUrl, finalPdfUrl: $finalPdfUrl, isPaid: $isPaid, pages: $pages, editHistory: $editHistory, imagesFinal: $imagesFinal)';
   }
 
   @override
@@ -353,6 +372,7 @@ class _$BookImpl implements _Book {
                 other.coverUrl == coverUrl) &&
             (identical(other.finalPdfUrl, finalPdfUrl) ||
                 other.finalPdfUrl == finalPdfUrl) &&
+            (identical(other.isPaid, isPaid) || other.isPaid == isPaid) &&
             const DeepCollectionEquality().equals(other._pages, _pages) &&
             const DeepCollectionEquality().equals(
               other._editHistory,
@@ -376,6 +396,7 @@ class _$BookImpl implements _Book {
     status,
     coverUrl,
     finalPdfUrl,
+    isPaid,
     const DeepCollectionEquality().hash(_pages),
     const DeepCollectionEquality().hash(_editHistory),
     const DeepCollectionEquality().hash(_imagesFinal),
@@ -406,6 +427,7 @@ abstract class _Book implements Book {
     @JsonKey(name: 'status') final String status,
     @JsonKey(name: 'cover_url') final String? coverUrl,
     @JsonKey(name: 'final_pdf_url') final String? finalPdfUrl,
+    @JsonKey(name: 'is_paid') final bool isPaid,
     @JsonKey(name: 'pages') final List<dynamic>? pages,
     @JsonKey(name: 'edit_history') final List<dynamic>? editHistory,
     @JsonKey(name: 'images_final') final List<dynamic>? imagesFinal,
@@ -436,7 +458,10 @@ abstract class _Book implements Book {
   String? get coverUrl;
   @override
   @JsonKey(name: 'final_pdf_url')
-  String? get finalPdfUrl;
+  String? get finalPdfUrl; // Статус оплаты книги
+  @override
+  @JsonKey(name: 'is_paid')
+  bool get isPaid;
   @override
   @JsonKey(name: 'pages')
   List<dynamic>? get pages;

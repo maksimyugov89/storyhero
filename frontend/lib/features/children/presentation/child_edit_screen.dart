@@ -18,7 +18,8 @@ import '../../../../core/widgets/rounded_image.dart';
 import '../../../../ui/components/photo_preview_grid.dart';
 import '../../../../ui/components/asset_icon.dart';
 import '../presentation/children_list_screen.dart';
-import '../state/child_photos_provider.dart';
+import '../data/child_photos_provider.dart';
+import '../../../core/models/child_photo.dart';
 import 'dart:io' if (dart.library.html) 'dart:html' as io;
 
 class ChildEditScreen extends HookConsumerWidget {
@@ -39,10 +40,10 @@ class ChildEditScreen extends HookConsumerWidget {
     final characterController = useTextEditingController(text: child.character ?? '');
     final moralController = useTextEditingController(text: child.moral ?? '');
     final isLoading = useState(false);
+    final isDeleting = useState(false);
     final errorMessage = useState<String?>(null);
     final selectedPhotos = useState<List<io.File>>([]);
-    final photosState = ref.watch(childPhotosProvider(child.id));
-    final photosNotifier = ref.read(childPhotosProvider(child.id).notifier);
+    final photosAsync = ref.watch(childPhotosProvider(child.id));
     final fadeAnimation = useAnimationController(
       duration: const Duration(milliseconds: 800),
     );
@@ -51,6 +52,111 @@ class ChildEditScreen extends HookConsumerWidget {
       fadeAnimation.forward();
       return null;
     }, []);
+    
+    // Получаем список URL фотографий из API
+    final existingPhotoUrls = photosAsync.when(
+      data: (response) => response.photos.map((p) => p.url).toList(),
+      loading: () => <String>[],
+      error: (_, __) => <String>[],
+    );
+    
+    // Текущая аватарка
+    final currentAvatarUrl = child.faceUrl;
+    
+    // Функция удаления фото
+    Future<void> handleDeletePhoto(String photoUrl) async {
+      isDeleting.value = true;
+      try {
+        final api = ref.read(backendApiProvider);
+        await api.deleteChildPhoto(
+          childId: child.id,
+          photoUrl: photoUrl,
+        );
+        
+        // Обновляем провайдер
+        ref.invalidate(childPhotosProvider(child.id));
+        
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Фото удалено'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          final errorStr = e.toString();
+          String message;
+          if (errorStr.contains('405') || errorStr.contains('Method Not Allowed')) {
+            message = 'Удаление фото временно недоступно. Функция в разработке.';
+          } else {
+            message = 'Ошибка удаления: ${errorStr.replaceAll('Exception: ', '')}';
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: AppColors.error,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } finally {
+        isDeleting.value = false;
+      }
+    }
+    
+    // Диалог подтверждения удаления
+    Future<void> showDeleteConfirmation(String photoUrl) async {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'Удалить фото?',
+            style: safeCopyWith(
+              AppTypography.headlineSmall,
+              color: AppColors.onSurface,
+            ),
+          ),
+          content: Text(
+            'Фотография будет удалена безвозвратно.',
+            style: safeCopyWith(
+              AppTypography.bodyMedium,
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(
+                'Отмена',
+                style: safeCopyWith(
+                  AppTypography.labelLarge,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(
+                'Удалить',
+                style: safeCopyWith(
+                  AppTypography.labelLarge,
+                  color: AppColors.error,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      
+      if (confirmed == true) {
+        await handleDeletePhoto(photoUrl);
+      }
+    }
 
     Future<void> handleUpdate() async {
       if (nameController.text.trim().isEmpty) {
@@ -69,7 +175,6 @@ class ChildEditScreen extends HookConsumerWidget {
 
       try {
         final api = ref.read(backendApiProvider);
-        final photosNotifier = ref.read(childPhotosProvider(child.id).notifier);
         
         final updatedChild = await api.updateChild(
           id: child.id,
@@ -79,14 +184,13 @@ class ChildEditScreen extends HookConsumerWidget {
           fears: fearsController.text.trim(),
           character: characterController.text.trim(),
           moral: moralController.text.trim(),
-          faceUrl: photosState.isNotEmpty ? photosState.first : null,
+          faceUrl: existingPhotoUrls.isNotEmpty ? existingPhotoUrls.first : null,
           photos: selectedPhotos.value.isNotEmpty ? selectedPhotos.value : null,
-          existingPhotoUrls: photosState.isNotEmpty ? photosState : null,
+          existingPhotoUrls: existingPhotoUrls.isNotEmpty ? existingPhotoUrls : null,
         );
 
-        if (updatedChild.faceUrl != null && updatedChild.faceUrl!.isNotEmpty) {
-          photosNotifier.addPhoto(updatedChild.faceUrl!);
-        }
+        // Обновляем провайдер фотографий
+        ref.invalidate(childPhotosProvider(child.id));
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -174,13 +278,63 @@ class ChildEditScreen extends HookConsumerWidget {
                 const SizedBox(height: AppSpacing.lg),
                 
                 // Фотографии
-                PhotoPreviewGrid(
-                  existingPhotos: photosState,
-                  selectedPhotos: selectedPhotos.value,
-                  onPhotosChanged: (photos) {
-                    selectedPhotos.value = photos;
+                photosAsync.when(
+                  data: (response) {
+                    final photoUrls = response.photos.map((p) => p.url).toList();
+                    return Stack(
+                      children: [
+                        PhotoPreviewGrid(
+                          existingPhotos: photoUrls,
+                          selectedPhotos: selectedPhotos.value,
+                          currentAvatarUrl: currentAvatarUrl,
+                          onPhotosChanged: (photos) {
+                            selectedPhotos.value = photos;
+                          },
+                          onPhotoDeleted: (index) {
+                            if (index < photoUrls.length) {
+                              showDeleteConfirmation(photoUrls[index]);
+                            }
+                          },
+                          maxPhotos: 5,
+                          allowAvatarSelection: false,
+                        ),
+                        if (isDeleting.value)
+                          Positioned.fill(
+                            child: Container(
+                              color: Colors.black.withOpacity(0.3),
+                              child: const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
                   },
-                  maxPhotos: 5,
+                  loading: () => const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(),
+                    ),
+                  ),
+                  error: (error, _) => Container(
+                    padding: AppSpacing.paddingMD,
+                    child: Column(
+                      children: [
+                        Text(
+                          'Ошибка загрузки фото',
+                          style: safeCopyWith(
+                            AppTypography.bodyMedium,
+                            color: AppColors.error,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: () => ref.invalidate(childPhotosProvider(child.id)),
+                          child: const Text('Повторить'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 
                 const SizedBox(height: AppSpacing.lg),
@@ -244,7 +398,7 @@ class ChildEditScreen extends HookConsumerWidget {
                   controller: moralController,
                   label: 'Мораль истории',
                   hint: 'Например: хорошо учиться',
-                  prefixIcon: Icons.book_outlined,
+                  prefixIconAsset: AppIcons.book,
                   maxLines: 3,
                   enabled: !isLoading.value,
                 ),

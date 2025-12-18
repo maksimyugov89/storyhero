@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../features/auth/data/auth_repository.dart';
@@ -117,7 +118,12 @@ class AuthInterceptor extends Interceptor {
       if (token == null) {
         print('[AuthInterceptor] ❌ Токен отсутствует -> ${options.uri}');
       } else {
-        print('[AuthInterceptor] 🔑 TOKEN: ${token.substring(0, 20)}...');
+        // ВАЖНО: полный токен логируем только в debug сборке (в релизе это небезопасно).
+        if (kDebugMode) {
+          print('[AuthInterceptor] 🔑 TOKEN (FULL): $token');
+        } else {
+          print('[AuthInterceptor] 🔑 TOKEN: ${token.substring(0, 20)}...');
+        }
         print('[AuthInterceptor] Добавлен токен авторизации -> ${options.uri}');
         options.headers['Authorization'] = 'Bearer $token';
       }

@@ -17,10 +17,17 @@ import '../../features/books/presentation/book_view_screen.dart';
 import '../../features/books/presentation/child_books_screen.dart';
 import '../../features/books/presentation/edit_scene_screen.dart';
 import '../../features/books/presentation/edit_text_screen.dart';
+import '../../features/books/presentation/edit_text_with_variants_screen.dart';
+import '../../features/books/presentation/edit_image_with_variants_screen.dart';
 import '../../features/books/presentation/finalization_screen.dart';
+import '../../features/books/presentation/book_finalize_screen.dart';
+import '../../features/books/presentation/book_complete_screen.dart';
+import '../../features/books/presentation/book_order_screen.dart';
 import '../../features/generate/presentation/create_book_screen.dart';
 import '../../features/generate/presentation/task_status_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
+import '../../features/settings/presentation/help_screen.dart';
+import '../../features/subscription/presentation/subscription_screen.dart';
 import '../../features/payments/presentation/payment_screen.dart';
 import '../../core/models/child.dart';
 import 'route_names.dart';
@@ -189,7 +196,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final bookId = state.pathParameters['id']!;
           final sceneIndex = int.parse(state.pathParameters['index']!);
-          return EditTextScreen(bookId: bookId, sceneIndex: sceneIndex);
+          // Используем новый экран с вариантами
+          return EditTextWithVariantsScreen(bookId: bookId, sceneIndex: sceneIndex);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.bookImageEdit,
+        builder: (context, state) {
+          final bookId = state.pathParameters['id']!;
+          final sceneIndex = int.parse(state.pathParameters['index']!);
+          return EditImageWithVariantsScreen(bookId: bookId, sceneIndex: sceneIndex);
         },
       ),
       GoRoute(
@@ -197,6 +213,27 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final bookId = state.pathParameters['id']!;
           return FinalizationScreen(bookId: bookId);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.bookFinalizePreview,
+        builder: (context, state) {
+          final bookId = state.pathParameters['id']!;
+          return BookFinalizeScreen(bookId: bookId);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.bookComplete,
+        builder: (context, state) {
+          final bookId = state.pathParameters['id']!;
+          return BookCompleteScreen(bookId: bookId);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.bookOrder,
+        builder: (context, state) {
+          final bookId = state.pathParameters['id']!;
+          return BookOrderScreen(bookId: bookId);
         },
       ),
       GoRoute(
@@ -213,6 +250,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RouteNames.settings,
         builder: (_, __) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.help,
+        builder: (_, __) => const HelpScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.subscription,
+        builder: (_, __) => const SubscriptionScreen(),
       ),
       GoRoute(
         path: RouteNames.payment,

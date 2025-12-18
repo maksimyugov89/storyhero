@@ -241,7 +241,7 @@ class ChildCreateScreen extends HookConsumerWidget {
                   controller: moralController,
                   label: 'Мораль истории',
                   hint: 'Например: хорошо учиться',
-                  prefixIcon: Icons.book_outlined,
+                  prefixIconAsset: AppIcons.book,
                   maxLines: 3,
                   enabled: !isLoading.value,
                 ),

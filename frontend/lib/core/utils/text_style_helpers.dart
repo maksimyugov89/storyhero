@@ -23,6 +23,7 @@ TextStyle safeTextStyle({
   double minFontSize = 8.0,
   double maxFontSize = 200.0,
   FontWeight? fontWeight,
+  FontStyle? fontStyle,
   Color? color,
   double? height,
   double? letterSpacing,
@@ -37,6 +38,7 @@ TextStyle safeTextStyle({
     return style.copyWith(
       fontSize: safeSize,
       fontWeight: fontWeight ?? style.fontWeight,
+      fontStyle: fontStyle ?? style.fontStyle,
       color: color ?? style.color,
       height: height ?? style.height,
       letterSpacing: letterSpacing ?? style.letterSpacing,
@@ -52,6 +54,7 @@ TextStyle safeTextStyle({
   return style.copyWith(
     fontSize: safeSize,
     fontWeight: fontWeight ?? style.fontWeight,
+    fontStyle: fontStyle ?? style.fontStyle,
     color: color ?? style.color,
     height: height ?? style.height,
     letterSpacing: letterSpacing ?? style.letterSpacing,
@@ -67,6 +70,7 @@ TextStyle safeCopyWith(TextStyle? style, {
   double minFontSize = 8.0,
   double maxFontSize = 200.0,
   FontWeight? fontWeight,
+  FontStyle? fontStyle,
   Color? color,
   double? height,
   double? letterSpacing,
@@ -78,6 +82,7 @@ TextStyle safeCopyWith(TextStyle? style, {
     return TextStyle(
       fontSize: safeSize,
       fontWeight: fontWeight,
+      fontStyle: fontStyle,
       color: color,
       height: height,
       letterSpacing: letterSpacing,
@@ -97,6 +102,7 @@ TextStyle safeCopyWith(TextStyle? style, {
   return style.copyWith(
     fontSize: safeSize,
     fontWeight: fontWeight ?? style.fontWeight,
+    fontStyle: fontStyle ?? style.fontStyle,
     color: color ?? style.color,
     height: height ?? style.height,
     letterSpacing: letterSpacing ?? style.letterSpacing,

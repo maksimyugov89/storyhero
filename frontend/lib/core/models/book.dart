@@ -42,6 +42,9 @@ class Book with _$Book {
     // необязательные поля
     @JsonKey(name: 'cover_url') String? coverUrl,
     @JsonKey(name: 'final_pdf_url') String? finalPdfUrl,
+    
+    // Статус оплаты книги
+    @JsonKey(name: 'is_paid') @Default(false) bool isPaid,
 
     @JsonKey(name: 'pages')
     List<dynamic>? pages,

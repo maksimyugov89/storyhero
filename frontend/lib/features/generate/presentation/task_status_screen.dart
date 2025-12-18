@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lottie/lottie.dart';
 import '../../../../app/routes/route_names.dart';
 import '../../../../core/api/backend_api.dart';
 import '../../../../core/models/task_status.dart';
@@ -719,15 +720,65 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(height: AppSpacing.xxl),
+                  const SizedBox(height: AppSpacing.lg),
                   
-                  // Магическая анимация
-                  AppMagicLoader(
-                    size: 80,
-                    glowColor: AppColors.primary,
+                  // Магическая Lottie анимация с процентами
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Lottie анимация на фоне
+                      SizedBox(
+                        width: 200,
+                        height: 200,
+                        child: Lottie.asset(
+                          'assets/animations/login_magic_swirl.json',
+                          fit: BoxFit.contain,
+                          repeat: true,
+                        ),
+                      ),
+                      // Процент в центре анимации
+                      Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              AppColors.primary.withOpacity(0.3),
+                              AppColors.primary.withOpacity(0.1),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${(progress * 100).toStringAsFixed(0)}%',
+                                style: safeCopyWith(
+                                  AppTypography.headlineLarge,
+                                  color: AppColors.onBackground,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 32.0,
+                                ),
+                              ),
+                              Text(
+                                'готово',
+                                style: safeCopyWith(
+                                  AppTypography.bodySmall,
+                                  color: AppColors.onSurfaceVariant,
+                                  fontSize: 12.0,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   
-                  const SizedBox(height: AppSpacing.xl),
+                  const SizedBox(height: AppSpacing.lg),
                   
                   Text(
                     'Создание вашей книги',
@@ -738,14 +789,26 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                   const SizedBox(height: AppSpacing.md),
                   
                   // Текущий этап с деталями
-                  Text(
-                    task.generationStatus.step.displayName,
-                    style: safeCopyWith(
-                      AppTypography.bodyLarge,
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.primary.withOpacity(0.2),
+                          AppColors.secondary.withOpacity(0.2),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    textAlign: TextAlign.center,
+                    child: Text(
+                      task.generationStatus.step.displayName,
+                      style: safeCopyWith(
+                        AppTypography.bodyLarge,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                   
                   if (_getDetailedProgressMessage(task) != null) ...[
@@ -765,7 +828,7 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                   // Прогресс-бар
                   AppProgressBar(
                     progress: progress,
-                    label: 'Прогресс: ${(progress * 100).toStringAsFixed(0)}%',
+                    label: 'Генерация изображений: ${(progress * 100).toStringAsFixed(0)}%',
                   ),
                   
                   const SizedBox(height: AppSpacing.xl),

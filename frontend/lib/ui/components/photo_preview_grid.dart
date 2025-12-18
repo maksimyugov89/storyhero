@@ -21,6 +21,8 @@ class PhotoPreviewGrid extends StatefulWidget {
   final String? fallbackFaceUrl; // Fallback face_url для обработки ошибок
   final int maxPhotos;
   final bool allowAvatarSelection; // Разрешить выбор аватарки
+  final bool showDeleteButton; // Показывать кнопку удаления
+  final bool showAddButton; // Показывать кнопку добавления фото
 
   const PhotoPreviewGrid({
     super.key,
@@ -34,6 +36,8 @@ class PhotoPreviewGrid extends StatefulWidget {
     this.fallbackFaceUrl,
     this.maxPhotos = 5,
     this.allowAvatarSelection = false,
+    this.showDeleteButton = true,
+    this.showAddButton = true,
   });
 
   @override
@@ -158,8 +162,9 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
         ),
         const SizedBox(height: 16),
         Wrap(
-          spacing: 12,
-          runSpacing: 12,
+          spacing: 16,
+          runSpacing: 16,
+          alignment: WrapAlignment.start,
           children: [
             // Существующие и новые фото
             ...allPhotos.asMap().entries.map((entry) {
@@ -172,8 +177,8 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
                 primaryColor,
               );
             }),
-            // Кнопка добавления
-            if (totalPhotos < widget.maxPhotos)
+            // Кнопка добавления (только если разрешено)
+            if (widget.showAddButton && totalPhotos < widget.maxPhotos)
               _buildAddButton(isDark, primaryColor),
           ],
         ),
@@ -188,7 +193,6 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
     Color primaryColor,
   ) {
     final isExisting = photo is _ExistingPhotoItem;
-    final displayIndex = isExisting ? index : index;
     
     // Проверяем, является ли это фото текущей аватаркой
     final isCurrentAvatar = widget.allowAvatarSelection && 
@@ -212,182 +216,199 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
               ),
             );
           },
-          child: Container(
-            width: 100,
-            height: 100,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(50),
-              child: Stack(
-                children: [
-                  // Фото
-                  photo is _ExistingPhotoItem
-                      ? FutureBuilder<Map<String, String>>(
-                          future: _getAuthHeaders(),
-                          builder: (context, snapshot) {
-                            final headers = snapshot.data ?? {};
-                            return CachedNetworkImage(
-                              imageUrl: (photo as _ExistingPhotoItem).url,
-                              width: 100,
-                              height: 100,
-                              fit: BoxFit.cover,
-                              httpHeaders: headers,
-                              placeholder: (context, url) => Container(
-                                color: primaryColor.withOpacity(0.1),
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Фото
+              Container(
+                width: 100,
+                height: 100,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(50),
+                  child: Stack(
+                    children: [
+                      // Фото
+                      photo is _ExistingPhotoItem
+                          ? FutureBuilder<Map<String, String>>(
+                              future: _getAuthHeaders(),
+                              builder: (context, snapshot) {
+                                final headers = snapshot.data ?? {};
+                                return CachedNetworkImage(
+                                  imageUrl: (photo as _ExistingPhotoItem).url,
+                                  width: 100,
+                                  height: 100,
+                                  fit: BoxFit.cover,
+                                  httpHeaders: headers,
+                                  placeholder: (context, url) => Container(
+                                    color: primaryColor.withOpacity(0.1),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) {
-                                // Если это fallback аватар и он недоступен, скрываем его
-                                final isFallbackAvatar = widget.fallbackFaceUrl != null &&
-                                    url == widget.fallbackFaceUrl;
-                                
-                                if (isFallbackAvatar) {
-                                  // Не показываем недоступный fallback - возвращаем пустой виджет
-                                  return const SizedBox.shrink();
-                                }
-                                
-                                // Для обычных фотографий показываем иконку ошибки
-                                return Container(
+                                  errorWidget: (context, url, error) {
+                                    // Если это fallback аватар и он недоступен, скрываем его
+                                    final isFallbackAvatar = widget.fallbackFaceUrl != null &&
+                                        url == widget.fallbackFaceUrl;
+                                    
+                                    if (isFallbackAvatar) {
+                                      // Не показываем недоступный fallback - возвращаем пустой виджет
+                                      return const SizedBox.shrink();
+                                    }
+                                    
+                                    // Для обычных фотографий показываем иконку ошибки
+                                    return Container(
+                                      color: primaryColor.withOpacity(0.1),
+                                      child: Icon(
+                                        Icons.image_not_supported,
+                                        color: primaryColor,
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            )
+                          : photo is _LocalPhotoItem
+                              ? Image.file(
+                                  (photo as _LocalPhotoItem).file,
+                                  width: 100,
+                                  height: 100,
+                                  fit: BoxFit.cover,
+                                )
+                              : Container(
                                   color: primaryColor.withOpacity(0.1),
                                   child: Icon(
                                     Icons.image_not_supported,
                                     color: primaryColor,
                                   ),
-                                );
-                              },
-                            );
-                          },
-                        )
-                      : photo is _LocalPhotoItem
-                          ? Image.file(
-                              (photo as _LocalPhotoItem).file,
-                              width: 100,
-                              height: 100,
-                              fit: BoxFit.cover,
-                            )
-                          : Container(
-                              color: primaryColor.withOpacity(0.1),
-                              child: Icon(
-                                Icons.image_not_supported,
-                                color: primaryColor,
-                              ),
-                            ),
-                  // Рамка для текущего avatar
-                  if (isCurrentAvatar)
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.amber,
-                            width: 3,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.amber.withOpacity(0.5),
-                              blurRadius: 8,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  // Иконка ⭐ для текущего avatar
-                  if (isCurrentAvatar)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.amber,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.star,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  // Кнопка удаления
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: GestureDetector(
-                      onTap: () {
-                        if (photo is _ExistingPhotoItem) {
-                          _deleteExistingPhoto(index);
-                        } else if (photo is _LocalPhotoItem) {
-                          _deleteLocalPhoto(index - _existingPhotoUrls.length);
-                        }
-                      },
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.red,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.close,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Подсказка для выбора аватарки
-                  if (widget.allowAvatarSelection && !isCurrentAvatar)
-                    Positioned.fill(
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(50),
-                          onTap: () {
-                            // Выбор фотографии как аватарки
-                            if (photo is _ExistingPhotoItem) {
-                              widget.onPhotoSelectedAsAvatar?.call((photo as _ExistingPhotoItem).url);
-                            } else if (photo is _LocalPhotoItem) {
-                              widget.onLocalPhotoSelectedAsAvatar?.call((photo as _LocalPhotoItem).file);
-                            }
-                          },
+                                ),
+                      // Рамка для текущего avatar
+                      if (isCurrentAvatar)
+                        Positioned.fill(
                           child: Container(
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.black.withOpacity(0.2),
+                              border: Border.all(
+                                color: Colors.amber,
+                                width: 3,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.amber.withOpacity(0.5),
+                                  blurRadius: 8,
+                                  spreadRadius: 2,
+                                ),
+                              ],
                             ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.star_border,
-                                color: Colors.white,
-                                size: 24,
+                          ),
+                        ),
+                      // Иконка ⭐ для текущего avatar
+                      if (isCurrentAvatar)
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.amber,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.3),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.star,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      // Подсказка для выбора аватарки
+                      if (widget.allowAvatarSelection && !isCurrentAvatar)
+                        Positioned.fill(
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(50),
+                              onTap: () {
+                                // Выбор фотографии как аватарки
+                                if (photo is _ExistingPhotoItem) {
+                                  widget.onPhotoSelectedAsAvatar?.call((photo as _ExistingPhotoItem).url);
+                                } else if (photo is _LocalPhotoItem) {
+                                  widget.onLocalPhotoSelectedAsAvatar?.call((photo as _LocalPhotoItem).file);
+                                }
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.black.withOpacity(0.2),
+                                ),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.star_border,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+              // Кнопка удаления под фото (только если showDeleteButton = true)
+              if (widget.showDeleteButton) ...[
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () {
+                    if (photo is _ExistingPhotoItem) {
+                      _deleteExistingPhoto(index);
+                    } else if (photo is _LocalPhotoItem) {
+                      _deleteLocalPhoto(index - _existingPhotoUrls.length);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.red.withOpacity(0.5),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AssetIcon(
+                          assetPath: AppIcons.delete,
+                          size: 12,
+                          color: Colors.red,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          'Удалить',
+                          style: safeCopyWith(
+                            Theme.of(context).textTheme.bodySmall,
+                            fontSize: 9.0,
+                            color: Colors.red,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         );
       },

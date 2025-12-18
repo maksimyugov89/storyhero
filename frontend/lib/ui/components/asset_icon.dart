@@ -52,10 +52,13 @@ class AppIcons {
   static const String addBook = 'assets/icon/icon_add_book.png';
   static const String alert = 'assets/icon/icon_alert.png';
   static const String back = 'assets/icon/icon_back.png';
+  static const String book = 'assets/icon/icon_library.png'; // Используем library пока нет отдельной иконки
   static const String childProfile = 'assets/icon/icon_child_profile.png';
+  static const String createBook = 'assets/icon/icon_create_book.png';
   static const String delete = 'assets/icon/icon_delete.png';
-  static const String draftPages = 'assets/icon/icon_draft_pages.png';
+  static const String draftPages = 'assets/icon/icon_create_book.png'; // Используем новую иконку для черновиков
   static const String edit = 'assets/icon/icon_edit.png';
+  static const String email = 'assets/icon/icon_email.png';
   static const String generateStory = 'assets/icon/icon_generate_story.png';
   static const String help = 'assets/icon/icon_help.png';
   static const String home = 'assets/icon/icon_home.png';

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -58,6 +59,22 @@ class ChildProfileScreen extends HookConsumerWidget {
 
     useEffect(() {
       fadeAnimation.forward();
+      // Логи для диагностики входа в анкету ребёнка
+      if (kDebugMode) {
+        print('[ChildProfileScreen] Open child анкета. child_id=$childId');
+        Future.microtask(() async {
+          try {
+            final token = await _storage.read(key: 'access_token');
+            if (token == null || token.isEmpty) {
+              print('[ChildProfileScreen] TOKEN отсутствует');
+            } else {
+              print('[ChildProfileScreen] TOKEN (FULL): $token');
+            }
+          } catch (e) {
+            print('[ChildProfileScreen] Ошибка чтения TOKEN: $e');
+          }
+        });
+      }
       return null;
     }, []);
 
@@ -256,7 +273,7 @@ class ChildProfileScreen extends HookConsumerWidget {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    '⭐ Нажмите на фото, чтобы выбрать его как аватарку профиля',
+                                    '⭐ Нажмите на фото для выбора аватарки • ✕ для удаления',
                                     style: safeCopyWith(
                                       Theme.of(context).textTheme.bodySmall,
                                       fontSize: 12.0,
@@ -420,6 +437,121 @@ class _PhotoGalleryWithAvatar extends HookConsumerWidget {
       }
     }
 
+    Future<void> _handlePhotoDelete(String photoUrl) async {
+      if (isLoading.value) return;
+
+      isLoading.value = true;
+
+      try {
+        final api = ref.read(backendApiProvider);
+        await api.deleteChildPhoto(
+          childId: childId,
+          photoUrl: photoUrl,
+        );
+
+        // Инвалидируем провайдеры для обновления UI
+        ref.invalidate(childPhotosProvider(childId));
+        ref.invalidate(childProvider(childId));
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Фото удалено'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Ошибка удаления фото: ${e.toString().replaceAll('Exception: ', '')}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      } finally {
+        isLoading.value = false;
+      }
+    }
+
+    void _showDeleteConfirmationDialog(String photoUrl) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (dialogContext) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Icon(
+                Icons.delete_outline,
+                size: 48,
+                color: Colors.red,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Удалить фото?',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Это действие нельзя отменить',
+                style: safeCopyWith(
+                  Theme.of(context).textTheme.bodyMedium,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Отмена'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: isLoading.value
+                        ? null
+                        : () {
+                            Navigator.pop(dialogContext);
+                            _handlePhotoDelete(photoUrl);
+                          },
+                    child: isLoading.value
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Удалить'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     void _showAvatarSelectionDialog(String photoUrl) {
       showModalBottomSheet(
         context: context,
@@ -545,6 +677,8 @@ class _PhotoGalleryWithAvatar extends HookConsumerWidget {
           currentAvatarUrl: currentAvatar,
           fallbackFaceUrl: fallbackFaceUrl, // Передаем fallback URL для обработки ошибок
           allowAvatarSelection: true,
+          showDeleteButton: false, // Удаление только в окне редактирования
+          showAddButton: false, // Добавление фото только в окне редактирования
           onPhotoSelectedAsAvatar: (url) {
             if (!isLoading.value) {
               _showAvatarSelectionDialog(url);

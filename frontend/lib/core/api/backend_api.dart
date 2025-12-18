@@ -690,6 +690,71 @@ class BackendApi {
     }
   }
 
+  /// Удаляет фотографию ребенка
+  /// DELETE /children/{child_id}/photos
+  /// 
+  /// Параметры:
+  /// - childId: ID ребенка
+  /// - photoUrl: URL фотографии для удаления
+  /// 
+  /// Возвращает void при успешном удалении
+  Future<void> deleteChildPhoto({
+    required String childId,
+    required String photoUrl,
+  }) async {
+    try {
+      print('[BackendApi] deleteChildPhoto: Удаление фото для ребенка $childId');
+      print('[BackendApi] deleteChildPhoto: URL фото: $photoUrl');
+      
+      final response = await _dio.delete(
+        '/children/$childId/photos',
+        data: {
+          'photo_url': photoUrl,
+        },
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        print('[BackendApi] deleteChildPhoto: Фото успешно удалено');
+        return;
+      }
+      
+      throw Exception('Не удалось удалить фото: статус ${response.statusCode}');
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final errorMessage = e.response?.data?['detail']?.toString() ?? 
+                          e.response?.data?['message']?.toString() ?? 
+                          e.message ?? 
+                          'Неизвестная ошибка';
+
+      print('[BackendApi] deleteChildPhoto: Ошибка удаления - статус: $statusCode, сообщение: $errorMessage');
+
+      if (statusCode == 401) {
+        throw Exception('Требуется авторизация. Пожалуйста, войдите в аккаунт заново.');
+      }
+
+      if (statusCode == 404) {
+        throw Exception('Фото не найдено');
+      }
+
+      if (statusCode == 403) {
+        throw Exception('Нет прав на удаление этого фото');
+      }
+
+      if (statusCode != null && statusCode >= 500) {
+        throw Exception('Сервер временно недоступен. Попробуйте позже.');
+      }
+
+      if (statusCode != null && statusCode >= 400) {
+        throw Exception('Ошибка сервера: $errorMessage');
+      }
+
+      rethrow;
+    } catch (e) {
+      print('[BackendApi] deleteChildPhoto: Неожиданная ошибка: $e');
+      rethrow;
+    }
+  }
+
   /// Устанавливает главное фото (avatar) для ребенка
   /// PUT /children/{child_id}/photos/avatar
   /// 
@@ -950,6 +1015,11 @@ class BackendApi {
   /// POST /books/generate_full_book
   /// Генерирует полную книгу для указанного ребенка с указанным стилем
   /// 
+  /// Параметры:
+  /// - childId: ID ребенка
+  /// - style: стиль иллюстраций (storybook, cartoon, pixar, disney, watercolor)
+  /// - numPages: количество страниц (по умолчанию 20, без учета обложки)
+  /// 
   /// Возвращает:
   /// {
   ///   "task_id": "03cbf305-4a8a-4a94-bbb0-5a08312ad567",
@@ -959,16 +1029,18 @@ class BackendApi {
   Future<GenerateFullBookResponse> generateFullBook({
     required String childId,
     required String style,
+    int numPages = 20, // Количество страниц без учета обложки
   }) async {
     try {
       print('[BackendApi] [API REQUEST] POST /books/generate_full_book');
-      print('[BackendApi] Request data: {child_id: $childId, style: $style}');
+      print('[BackendApi] Request data: {child_id: $childId, style: $style, num_pages: $numPages}');
       
       final response = await _dio.post(
         '/books/generate_full_book',
         data: {
           'child_id': childId,
           'style': style,
+          'num_pages': numPages, // 20 страниц без учета обложки
         },
       );
       
@@ -1175,23 +1247,29 @@ class BackendApi {
     }
   }
 
-  /// Обновляет текст сцены
-  /// POST /books/{book_id}/update_text
+  /// Обновляет текст конкретной сцены
+  /// POST /books/{book_id}/scenes/{scene_index}/update_text
   Future<Scene> updateText({
     required String bookId,
     required int sceneIndex,
     required String instruction,
   }) async {
     try {
+      print('[BackendApi] updateText: Обновление текста сцены $sceneIndex книги $bookId');
+      print('[BackendApi] updateText: Инструкция: $instruction');
+      
       final response = await _dio.post(
-        '/books/$bookId/update_text',
+        '/books/$bookId/scenes/$sceneIndex/update_text',
         data: {
-          'scene_index': sceneIndex,
-          'instruction': instruction,
+          'text_instructions': instruction,
         },
       );
+      
       if (response.statusCode == 200 || response.statusCode == 201) {
-        return Scene.fromJson(response.data as Map<String, dynamic>);
+        final responseData = response.data as Map<String, dynamic>;
+        // Бэкенд возвращает обновлённую сцену
+        print('[BackendApi] updateText: Текст успешно обновлён');
+        return Scene.fromJson(responseData);
       }
       throw Exception('Не удалось обновить текст: статус ${response.statusCode}');
     } on DioException catch (e) {
@@ -1200,6 +1278,7 @@ class BackendApi {
                           e.response?.data?['message']?.toString() ?? 
                           e.message ?? 
                           'Неизвестная ошибка';
+      print('[BackendApi] updateText: Ошибка - статус: $statusCode, сообщение: $errorMessage');
       if (statusCode == 401) {
         throw Exception('Требуется авторизация. Пожалуйста, войдите в аккаунт.');
       }
@@ -1280,6 +1359,192 @@ class BackendApi {
       if (statusCode == 401) {
         throw Exception('Требуется авторизация. Пожалуйста, войдите в аккаунт.');
       }
+      rethrow;
+    }
+  }
+
+  // ==================== PAYMENT ====================
+
+  /// Создать платёж для книги
+  /// POST /payments/create
+  /// Возвращает URL для оплаты (если есть платёжная система) или null (демо-режим)
+  Future<String?> createPayment(String bookId) async {
+    try {
+      print('[BackendApi] [API REQUEST] POST /payments/create');
+      print('[BackendApi] Request data: {book_id: $bookId}');
+      
+      final response = await _dio.post(
+        '/payments/create',
+        data: {'book_id': bookId},
+      );
+      
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+        return data['payment_url'] as String?;
+      }
+      return null;
+    } on DioException catch (e) {
+      print('[BackendApi] Payment create error: ${e.message}');
+      // В демо-режиме возвращаем null - будет имитация оплаты
+      return null;
+    }
+  }
+
+  /// Подтвердить оплату книги (для демо или webhook)
+  /// POST /payments/confirm
+  Future<bool> confirmPayment(String bookId) async {
+    try {
+      print('[BackendApi] [API REQUEST] POST /payments/confirm');
+      print('[BackendApi] Request data: {book_id: $bookId}');
+      
+      final response = await _dio.post(
+        '/payments/confirm',
+        data: {'book_id': bookId},
+      );
+      
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      print('[BackendApi] Payment confirm error: ${e.message}');
+      // В демо-режиме считаем что оплата прошла
+      return true;
+    }
+  }
+
+  /// Проверить статус оплаты книги
+  /// GET /payments/status/{book_id}
+  Future<bool> checkPaymentStatus(String bookId) async {
+    try {
+      print('[BackendApi] [API REQUEST] GET /payments/status/$bookId');
+      
+      final response = await _dio.get('/payments/status/$bookId');
+      
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+        return data['is_paid'] == true;
+      }
+      return false;
+    } on DioException catch (e) {
+      print('[BackendApi] Payment status error: ${e.message}');
+      return false;
+    }
+  }
+
+  // ==================== PRINT ORDERS ====================
+
+  /// Создать заказ на печать книги
+  /// POST /orders/print
+  /// Отправляет уведомление на email и Telegram разработчика
+  Future<Map<String, dynamic>> createPrintOrder({
+    required String bookId,
+    required String bookTitle,
+    required String size,
+    required int pages,
+    required String binding,
+    required String packaging,
+    required int totalPrice,
+    required String customerName,
+    required String customerPhone,
+    required String customerAddress,
+    String? comment,
+  }) async {
+    try {
+      print('[BackendApi] [API REQUEST] POST /orders/print');
+      print('[BackendApi] Order data: bookId=$bookId, size=$size, pages=$pages, binding=$binding, packaging=$packaging, total=$totalPrice');
+      
+      final orderData = {
+        'book_id': bookId,
+        'book_title': bookTitle,
+        'size': size,
+        'pages': pages,
+        'binding': binding,
+        'packaging': packaging,
+        'total_price': totalPrice,
+        'customer_name': customerName,
+        'customer_phone': customerPhone,
+        'customer_address': customerAddress,
+        'comment': comment ?? '',
+        'created_at': DateTime.now().toIso8601String(),
+      };
+      
+      final response = await _dio.post(
+        '/orders/print',
+        data: orderData,
+      );
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('[BackendApi] Print order created successfully');
+        return response.data as Map<String, dynamic>;
+      }
+      
+      throw Exception('Не удалось создать заказ: статус ${response.statusCode}');
+    } on DioException catch (e) {
+      print('[BackendApi] Print order error: ${e.message}');
+      
+      // В демо-режиме возвращаем успешный ответ
+      if (e.response?.statusCode == 404) {
+        print('[BackendApi] Demo mode: simulating successful order');
+        return {
+          'status': 'success',
+          'order_id': 'demo_${DateTime.now().millisecondsSinceEpoch}',
+          'message': 'Заказ оформлен (демо-режим)',
+        };
+      }
+      
+      rethrow;
+    }
+  }
+
+  // ==================== SUBSCRIPTION ====================
+
+  /// Проверить статус подписки
+  /// GET /subscription/status
+  Future<Map<String, dynamic>> checkSubscription() async {
+    try {
+      print('[BackendApi] [API REQUEST] GET /subscription/status');
+      
+      final response = await _dio.get('/subscription/status');
+      
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data as Map<String, dynamic>;
+      }
+      return {'is_subscribed': false};
+    } on DioException catch (e) {
+      print('[BackendApi] Subscription check error: ${e.message}');
+      // В демо-режиме возвращаем false
+      return {'is_subscribed': false};
+    }
+  }
+
+  /// Оформить подписку
+  /// POST /subscription/create
+  Future<Map<String, dynamic>> createSubscription() async {
+    try {
+      print('[BackendApi] [API REQUEST] POST /subscription/create');
+      
+      final response = await _dio.post(
+        '/subscription/create',
+        data: {'price': 199},
+      );
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('[BackendApi] Subscription created successfully');
+        return response.data as Map<String, dynamic>;
+      }
+      
+      throw Exception('Не удалось оформить подписку');
+    } on DioException catch (e) {
+      print('[BackendApi] Subscription create error: ${e.message}');
+      
+      // В демо-режиме имитируем успешную подписку
+      if (e.response?.statusCode == 404) {
+        print('[BackendApi] Demo mode: simulating successful subscription');
+        return {
+          'status': 'success',
+          'is_subscribed': true,
+          'expires_at': DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+        };
+      }
+      
       rethrow;
     }
   }

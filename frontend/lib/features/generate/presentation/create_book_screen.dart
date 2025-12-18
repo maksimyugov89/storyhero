@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/api/backend_api.dart';
 import '../../../../core/models/child.dart';
+import '../../../../core/models/book_style.dart';
 import '../../../../core/presentation/layouts/app_page.dart';
 import '../../../../core/presentation/design_system/app_colors.dart';
 import '../../../../core/presentation/design_system/app_typography.dart';
@@ -16,6 +17,7 @@ import '../../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../../core/widgets/rounded_image.dart';
 import '../../../../ui/components/asset_icon.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../subscription/data/subscription_provider.dart';
 import '../../../../app/routes/route_names.dart';
 
 final childrenProvider = FutureProvider<List<Child>>((ref) async {
@@ -25,15 +27,8 @@ final childrenProvider = FutureProvider<List<Child>>((ref) async {
 
 final selectedChildProvider = StateProvider<Child?>((ref) => null);
 final selectedStyleProvider = StateProvider<String?>((ref) => null);
+final selectedPagesProvider = StateProvider<int>((ref) => 20); // 10 или 20 страниц
 final generationLockProvider = StateProvider<bool>((ref) => false);
-
-final availableStyles = [
-  {'id': 'storybook', 'name': 'Storybook', 'description': 'Классический стиль'},
-  {'id': 'cartoon', 'name': 'Cartoon', 'description': 'Мультяшный стиль'},
-  {'id': 'pixar', 'name': 'Pixar', 'description': 'Стиль Pixar'},
-  {'id': 'disney', 'name': 'Disney', 'description': 'Стиль Disney'},
-  {'id': 'watercolor', 'name': 'Watercolor', 'description': 'Акварельный стиль'},
-];
 
 class CreateBookScreen extends HookConsumerWidget {
   const CreateBookScreen({super.key});
@@ -87,9 +82,11 @@ class CreateBookScreen extends HookConsumerWidget {
         
         try {
           final api = ref.read(backendApiProvider);
+          final numPages = ref.read(selectedPagesProvider);
           final response = await api.generateFullBook(
             childId: selectedChild.id,
             style: selectedStyle,
+            numPages: numPages,
           );
 
           if (context.mounted) {
@@ -507,6 +504,8 @@ class CreateBookScreen extends HookConsumerWidget {
     String? selectedStyle,
     String? errorMessage,
   ) {
+    final isSubscribed = ref.watch(isSubscribedProvider);
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -522,7 +521,45 @@ class CreateBookScreen extends HookConsumerWidget {
             color: AppColors.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: AppSpacing.xl),
+        const SizedBox(height: AppSpacing.md),
+        
+        // Выбор количества страниц
+        _buildPagesSelector(context, ref),
+        
+        const SizedBox(height: AppSpacing.md),
+        
+        // Баннер подписки
+        if (!isSubscribed)
+          GestureDetector(
+            onTap: () => context.push(RouteNames.subscription),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: AppSpacing.md),
+              padding: AppSpacing.paddingSM,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.amber.shade400, Colors.orange.shade400],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.workspace_premium, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Откройте ${premiumStyles.length} премиум стилей за 199 ₽/мес',
+                      style: safeCopyWith(
+                        AppTypography.labelMedium,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
+                ],
+              ),
+            ),
+          ),
         
         if (errorMessage != null) ...[
           Container(
@@ -544,51 +581,106 @@ class CreateBookScreen extends HookConsumerWidget {
         ],
         
         SizedBox(
-          height: 400,
+          height: 450,
           child: GridView.builder(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: AppSpacing.md,
               mainAxisSpacing: AppSpacing.md,
-              childAspectRatio: 0.9,
+              childAspectRatio: 0.85,
             ),
-            itemCount: availableStyles.length,
+            itemCount: allBookStyles.length,
             itemBuilder: (context, index) {
-              final style = availableStyles[index];
-              final isSelected = selectedStyle == style['id'];
+              final style = allBookStyles[index];
+              final isSelected = selectedStyle == style.id;
+              final isLocked = style.isPremium && !isSubscribed;
               
               return AppMagicCard(
                 onTap: () {
-                  ref.read(selectedStyleProvider.notifier).state = style['id'] as String;
+                  if (isLocked) {
+                    // Показать предложение подписки
+                    _showSubscriptionPrompt(context);
+                  } else {
+                    ref.read(selectedStyleProvider.notifier).state = style.id;
+                  }
                 },
                 selected: isSelected,
                 padding: AppSpacing.paddingMD,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Stack(
                   children: [
-                    AssetIcon(
-                      assetPath: AppIcons.magicStyle,
-                      size: 48,
-                      color: isSelected ? AppColors.primary : AppColors.onSurfaceVariant,
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AssetIcon(
+                          assetPath: AppIcons.magicStyle,
+                          size: 40,
+                          color: isLocked
+                              ? AppColors.onSurfaceVariant.withOpacity(0.5)
+                              : isSelected
+                                  ? AppColors.primary
+                                  : AppColors.onSurfaceVariant,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          style.name,
+                          style: safeCopyWith(
+                            AppTypography.labelLarge,
+                            fontWeight: FontWeight.bold,
+                            color: isLocked ? AppColors.onSurfaceVariant.withOpacity(0.5) : null,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          style.description,
+                          style: safeCopyWith(
+                            AppTypography.bodySmall,
+                            color: isLocked
+                                ? AppColors.onSurfaceVariant.withOpacity(0.5)
+                                : AppColors.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      style['name'] as String,
-                      style: safeCopyWith(
-                        AppTypography.labelLarge,
-                        fontWeight: FontWeight.bold,
+                    // Замок для премиум стилей
+                    if (isLocked)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.amber,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.lock, size: 16, color: Colors.white),
+                        ),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      style['description'] as String,
-                      style: safeCopyWith(
-                        AppTypography.bodySmall,
-                        color: AppColors.onSurfaceVariant,
+                    // Бейдж "Бесплатно"
+                    if (!style.isPremium)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'FREE',
+                            style: safeCopyWith(
+                              AppTypography.labelSmall,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 9.0,
+                            ),
+                          ),
+                        ),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
                   ],
                 ),
               );
@@ -599,6 +691,214 @@ class CreateBookScreen extends HookConsumerWidget {
     );
   }
 
+  Widget _buildPagesSelector(BuildContext context, WidgetRef ref) {
+    final selectedPages = ref.watch(selectedPagesProvider);
+    
+    return Container(
+      padding: AppSpacing.paddingMD,
+      decoration: BoxDecoration(
+        color: AppColors.surface.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.primary.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_stories, color: AppColors.primary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Количество страниц',
+                style: safeCopyWith(
+                  AppTypography.labelLarge,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: _buildPageOption(
+                  context,
+                  ref,
+                  pages: 10,
+                  isSelected: selectedPages == 10,
+                  description: 'Короткая история',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildPageOption(
+                  context,
+                  ref,
+                  pages: 20,
+                  isSelected: selectedPages == 20,
+                  description: 'Полная история',
+                  isRecommended: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPageOption(
+    BuildContext context,
+    WidgetRef ref, {
+    required int pages,
+    required bool isSelected,
+    required String description,
+    bool isRecommended = false,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        ref.read(selectedPagesProvider.notifier).state = pages;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withOpacity(0.15)
+              : AppColors.surfaceVariant.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                Text(
+                  '$pages',
+                  style: safeCopyWith(
+                    AppTypography.headlineLarge,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected ? AppColors.primary : AppColors.onSurfaceVariant,
+                  ),
+                ),
+                Text(
+                  'страниц',
+                  style: safeCopyWith(
+                    AppTypography.labelMedium,
+                    color: isSelected ? AppColors.primary : AppColors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: safeCopyWith(
+                    AppTypography.bodySmall,
+                    color: AppColors.onSurfaceVariant,
+                    fontSize: 10.0,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+            if (isRecommended)
+              Positioned(
+                top: -4,
+                right: -4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '👍',
+                    style: TextStyle(fontSize: 10),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSubscriptionPrompt(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: AppSpacing.paddingLG,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Icon(Icons.workspace_premium, size: 64, color: Colors.amber),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Премиум стиль',
+              style: AppTypography.headlineSmall,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Этот стиль доступен по подписке.\nОткройте ${premiumStyles.length} премиум стилей всего за 199 ₽/мес',
+              style: safeCopyWith(
+                AppTypography.bodyMedium,
+                color: AppColors.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  context.push(RouteNames.subscription);
+                },
+                icon: Icon(Icons.star, color: Colors.white),
+                label: Text(
+                  'Оформить подписку',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.amber.shade600,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Выбрать бесплатный стиль'),
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildStep3(
     BuildContext context,
     WidgetRef ref,
@@ -606,10 +906,11 @@ class CreateBookScreen extends HookConsumerWidget {
     String? selectedStyle,
     String? errorMessage,
   ) {
-    final styleName = availableStyles.firstWhere(
-      (s) => s['id'] == selectedStyle,
-      orElse: () => {'name': 'Неизвестный'},
-    )['name'] as String;
+    final style = allBookStyles.firstWhere(
+      (s) => s.id == selectedStyle,
+      orElse: () => const BookStyle(id: '', name: 'Неизвестный', description: ''),
+    );
+    final styleName = style.name;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -730,6 +1031,29 @@ class CreateBookScreen extends HookConsumerWidget {
               const SizedBox(height: AppSpacing.sm),
               Text(
                 styleName,
+                style: AppTypography.headlineSmall,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                children: [
+                  Icon(
+                    Icons.auto_stories,
+                    size: 24,
+                    color: Colors.teal,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    'Страницы',
+                    style: safeCopyWith(
+                      AppTypography.labelLarge,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                '${ref.watch(selectedPagesProvider)} страниц',
                 style: AppTypography.headlineSmall,
               ),
             ],

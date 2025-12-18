@@ -38,6 +38,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   flutter_image_compress: ^2.3.0
   path_provider: ^2.1.2
+  url_launcher: ^6.2.5
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +57,7 @@ flutter:
   assets:
     - assets/icon.png
     - assets/icon/
+    - assets/icons/book/
     - assets/logo/
     - assets/animations/
 

@@ -9,7 +9,6 @@ import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
 import '../../../core/utils/text_style_helpers.dart';
 import '../../../core/presentation/widgets/cards/app_magic_card.dart';
-import '../../../core/presentation/widgets/buttons/app_fab.dart';
 import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../core/widgets/rounded_image.dart';
 import '../../../ui/components/asset_icon.dart';
@@ -276,11 +275,6 @@ class BooksListScreen extends HookConsumerWidget {
               ),
             ),
           ],
-        ),
-        floatingActionButton: AppFAB(
-          iconAsset: AppIcons.addBook,
-          tooltip: 'Создать книгу',
-          onPressed: () => context.go(RouteNames.generate),
         ),
       ),
     );

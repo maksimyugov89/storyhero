@@ -90,7 +90,8 @@ class _FinalizationScreenState extends ConsumerState<FinalizationScreen> {
             _navigated = true;
             Future.delayed(const Duration(milliseconds: 800), () {
               if (!_isDisposed && mounted) {
-                context.go(RouteNames.bookView.replaceAll(':id', widget.bookId));
+                // Переходим на экран оплаты и скачивания
+                context.go(RouteNames.bookComplete.replaceAll(':id', widget.bookId));
               }
             });
           }
