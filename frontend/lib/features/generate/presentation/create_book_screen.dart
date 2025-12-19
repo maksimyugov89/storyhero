@@ -503,21 +503,6 @@ class CreateBookScreen extends HookConsumerWidget {
                     ),
                   );
                 }),
-                // Кнопка добавления новой анкеты
-                const SizedBox(height: AppSpacing.sm),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    await context.push(RouteNames.childrenNew);
-                    ref.invalidate(childrenProvider);
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('Добавить анкету'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    side: BorderSide(color: AppColors.primary.withOpacity(0.5)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                ),
               ],
             );
           },
