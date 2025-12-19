@@ -377,105 +377,148 @@ class CreateBookScreen extends HookConsumerWidget {
         childrenAsync.when(
           data: (children) {
             if (children.isEmpty) {
-              return AppMagicCard(
-                onTap: () => context.go(RouteNames.childrenNew),
-                padding: AppSpacing.paddingLG,
-                child: Column(
-                  children: [
-                    AssetIcon(
-                      assetPath: AppIcons.childProfile,
-                      size: 64,
-                      color: AppColors.primary,
+              return Column(
+                children: [
+                  AppMagicCard(
+                    padding: AppSpacing.paddingLG,
+                    child: Column(
+                      children: [
+                        AssetIcon(
+                          assetPath: AppIcons.childProfile,
+                          size: 64,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          'Нет анкет детей',
+                          style: AppTypography.headlineSmall,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'Создайте анкету ребёнка для генерации книги',
+                          style: safeCopyWith(
+                            AppTypography.bodyMedium,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            await context.push(RouteNames.childrenNew);
+                            // После возврата обновляем список детей
+                            ref.invalidate(childrenProvider);
+                          },
+                          icon: const Icon(Icons.add),
+                          label: const Text('Создать анкету'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      'Нет детей',
-                      style: AppTypography.headlineSmall,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      'Создайте первого ребёнка',
-                      style: safeCopyWith(
-                        AppTypography.bodyMedium,
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextButton.icon(
+                    onPressed: () => ref.invalidate(childrenProvider),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Обновить список'),
+                  ),
+                ],
               );
             }
             
             return Column(
-              children: children.map((child) {
-                final isSelected = selectedChild?.id == child.id;
-                return Padding(
-                  padding: EdgeInsets.only(bottom: AppSpacing.md),
-                  child: AppMagicCard(
-                    onTap: () {
-                      ref.read(selectedChildProvider.notifier).state = child;
-                    },
-                    selected: isSelected,
-                    padding: AppSpacing.paddingMD,
-                    child: Row(
-                      children: [
-                        if (child.faceUrl != null && child.faceUrl!.isNotEmpty)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: RoundedImage(
-                              imageUrl: child.faceUrl,
+              children: [
+                // Список детей
+                ...children.map((child) {
+                  final isSelected = selectedChild?.id == child.id;
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: AppSpacing.md),
+                    child: AppMagicCard(
+                      onTap: () {
+                        ref.read(selectedChildProvider.notifier).state = child;
+                      },
+                      selected: isSelected,
+                      padding: AppSpacing.paddingMD,
+                      child: Row(
+                        children: [
+                          if (child.faceUrl != null && child.faceUrl!.isNotEmpty)
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: RoundedImage(
+                                imageUrl: child.faceUrl,
+                                width: 60,
+                                height: 60,
+                                radius: 12,
+                              ),
+                            )
+                          else
+                            Container(
                               width: 60,
                               height: 60,
-                              radius: 12,
-                            ),
-                          )
-                        else
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              gradient: AppColors.primaryGradient,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Center(
-                              child: Text(
-                                child.name[0].toUpperCase(),
-                                style: safeCopyWith(
-                                  AppTypography.headlineSmall,
-                                  color: AppColors.onPrimary,
+                              decoration: BoxDecoration(
+                                gradient: AppColors.primaryGradient,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  child.name[0].toUpperCase(),
+                                  style: safeCopyWith(
+                                    AppTypography.headlineSmall,
+                                    color: AppColors.onPrimary,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                child.name,
-                                style: AppTypography.headlineSmall,
-                              ),
-                              Text(
-                                '${child.age} лет',
-                                style: safeCopyWith(
-                                  AppTypography.bodyMedium,
-                                  color: AppColors.onSurfaceVariant,
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  child.name,
+                                  style: AppTypography.headlineSmall,
                                 ),
-                              ),
-                            ],
+                                Text(
+                                  '${child.age} лет',
+                                  style: safeCopyWith(
+                                    AppTypography.bodyMedium,
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        if (isSelected)
-                          AssetIcon(
-                            assetPath: AppIcons.success,
-                            size: 24,
-                            color: AppColors.success,
-                          ),
-                      ],
+                          if (isSelected)
+                            AssetIcon(
+                              assetPath: AppIcons.success,
+                              size: 24,
+                              color: AppColors.success,
+                            ),
+                        ],
+                      ),
                     ),
+                  );
+                }),
+                // Кнопка добавления новой анкеты
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await context.push(RouteNames.childrenNew);
+                    ref.invalidate(childrenProvider);
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Добавить анкету'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: BorderSide(color: AppColors.primary.withOpacity(0.5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
-                );
-              }).toList(),
+                ),
+              ],
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),

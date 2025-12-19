@@ -103,6 +103,19 @@ class ChildrenListScreen extends HookConsumerWidget {
             onPressed: () => context.go(RouteNames.home),
           ),
         ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () => context.push(RouteNames.childrenNew),
+          backgroundColor: AppColors.primary,
+          icon: const Icon(Icons.add, color: Colors.white),
+          label: Text(
+            'Создать анкету',
+            style: safeCopyWith(
+              AppTypography.labelLarge,
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
         body: FadeTransition(
           opacity: fadeAnimation,
           child: childrenAsync.when(
@@ -128,6 +141,17 @@ class ChildrenListScreen extends HookConsumerWidget {
                         style: safeCopyWith(
                           AppTypography.bodyMedium,
                           color: AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      ElevatedButton.icon(
+                        onPressed: () => context.push(RouteNames.childrenNew),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Создать анкету'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         ),
                       ),
                     ],
