@@ -48,7 +48,7 @@ class SubscriptionScreen extends HookConsumerWidget {
                 children: [
                   Text(
                     '🎉 Поздравляем!',
-                    style: AppTypography.titleMedium,
+                    style: AppTypography.headlineSmall,
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -260,7 +260,7 @@ class SubscriptionScreen extends HookConsumerWidget {
               Text(
                 'Что входит в подписку',
                 style: safeCopyWith(
-                  AppTypography.titleMedium,
+                  AppTypography.headlineSmall,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -364,7 +364,7 @@ class SubscriptionScreen extends HookConsumerWidget {
           Text(
             'Подписка активна',
             style: safeCopyWith(
-              AppTypography.titleLarge,
+              AppTypography.headlineMedium,
               fontWeight: FontWeight.bold,
               color: Colors.green,
             ),
@@ -391,7 +391,7 @@ class SubscriptionScreen extends HookConsumerWidget {
         Text(
           'Премиум стили',
           style: safeCopyWith(
-            AppTypography.titleMedium,
+            AppTypography.headlineSmall,
             fontWeight: FontWeight.bold,
           ),
         ),

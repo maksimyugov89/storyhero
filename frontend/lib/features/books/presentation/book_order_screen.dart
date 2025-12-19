@@ -268,7 +268,7 @@ class BookOrderScreen extends HookConsumerWidget {
                                       children: [
                                         Text(
                                           'Спасибо за заказ!',
-                                          style: AppTypography.titleMedium,
+                                          style: AppTypography.headlineSmall,
                                         ),
                                         const SizedBox(height: 12),
                                         Text(
@@ -293,7 +293,7 @@ class BookOrderScreen extends HookConsumerWidget {
                                               Text(
                                                 'Итого: ${calculateTotal()} ₽',
                                                 style: safeCopyWith(
-                                                  AppTypography.titleMedium,
+                                                  AppTypography.headlineSmall,
                                                   fontWeight: FontWeight.bold,
                                                   color: AppColors.primary,
                                                 ),
@@ -433,7 +433,7 @@ class BookOrderScreen extends HookConsumerWidget {
                 const SizedBox(height: 4),
                 Text(
                   title,
-                  style: AppTypography.titleMedium,
+                  style: AppTypography.headlineSmall,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -458,7 +458,7 @@ class BookOrderScreen extends HookConsumerWidget {
               Text(
                 'Формат книги',
                 style: safeCopyWith(
-                  AppTypography.titleMedium,
+                  AppTypography.headlineSmall,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -494,7 +494,7 @@ class BookOrderScreen extends HookConsumerWidget {
               Text(
                 'Количество страниц',
                 style: safeCopyWith(
-                  AppTypography.titleMedium,
+                  AppTypography.headlineSmall,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -577,7 +577,7 @@ class BookOrderScreen extends HookConsumerWidget {
               Text(
                 'Тип переплёта',
                 style: safeCopyWith(
-                  AppTypography.titleMedium,
+                  AppTypography.headlineSmall,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -613,7 +613,7 @@ class BookOrderScreen extends HookConsumerWidget {
               Text(
                 'Упаковка',
                 style: safeCopyWith(
-                  AppTypography.titleMedium,
+                  AppTypography.headlineSmall,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -747,7 +747,7 @@ class BookOrderScreen extends HookConsumerWidget {
               Text(
                 'Данные для доставки',
                 style: safeCopyWith(
-                  AppTypography.titleMedium,
+                  AppTypography.headlineSmall,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -853,7 +853,7 @@ class BookOrderScreen extends HookConsumerWidget {
               Text(
                 'Итого',
                 style: safeCopyWith(
-                  AppTypography.titleMedium,
+                  AppTypography.headlineSmall,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -875,7 +875,7 @@ class BookOrderScreen extends HookConsumerWidget {
               Text(
                 'К оплате:',
                 style: safeCopyWith(
-                  AppTypography.titleLarge,
+                  AppTypography.headlineMedium,
                   fontWeight: FontWeight.bold,
                 ),
               ),

@@ -572,7 +572,7 @@ $message
                                 Text(
                                   'Telegram',
                                   style: safeCopyWith(
-                                    AppTypography.titleMedium,
+                                    AppTypography.headlineSmall,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),

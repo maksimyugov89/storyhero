@@ -340,7 +340,7 @@ class BookCompleteScreen extends HookConsumerWidget {
                     Text(
                       isPaid ? 'Оплачено' : 'Стоимость книги',
                       style: safeCopyWith(
-                        AppTypography.titleMedium,
+                        AppTypography.headlineSmall,
                         fontWeight: FontWeight.bold,
                         color: isPaid ? Colors.green : null,
                       ),
@@ -527,7 +527,7 @@ class BookCompleteScreen extends HookConsumerWidget {
                     Text(
                       'Скачать PDF',
                       style: safeCopyWith(
-                        AppTypography.titleMedium,
+                        AppTypography.headlineSmall,
                         fontWeight: FontWeight.bold,
                         color: canDownload ? null : AppColors.onSurfaceVariant,
                       ),
@@ -638,7 +638,7 @@ class BookCompleteScreen extends HookConsumerWidget {
                     Text(
                       '📚 Печатная книга',
                       style: safeCopyWith(
-                        AppTypography.titleMedium,
+                        AppTypography.headlineSmall,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
