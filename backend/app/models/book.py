@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, ForeignKey, DateTime, Integer
+from sqlalchemy import Column, String, Text, ForeignKey, DateTime, Integer, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -30,6 +30,9 @@ class Book(Base):
     audio_url = Column(String)
 
     status = Column(String, nullable=False, default="draft")
+    
+    # Поле оплаты
+    is_paid = Column(Boolean, default=False, nullable=False)
 
     # Workflow fields
     final_pdf_url = Column(Text)

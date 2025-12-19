@@ -72,8 +72,46 @@ async def _create_image_prompts_internal(
         }
         
         # Формируем промпты для каждой сцены
-        system_prompt = """Ты создаёшь промты для Stable Diffusion XL. 
-Используй единый стиль: мягкая сказочная иллюстрация, яркие цвета, тёплый свет, дружелюбные персонажи."""
+        system_prompt = """Ты создаёшь промты для Stable Diffusion XL (Pollinations.ai Flux model).
+Используй единый стиль: мягкая сказочная иллюстрация, яркие цвета, тёплый свет, дружелюбные персонажи.
+
+═══════════════════════════════════════════════════════════════════
+⚠️ КРИТИЧЕСКИ ВАЖНО ДЛЯ FACE SWAP - ОБЯЗАТЕЛЬНЫЕ ТРЕБОВАНИЯ:
+═══════════════════════════════════════════════════════════════════
+
+КАЖДЫЙ ПРОМПТ ДОЛЖЕН СОДЕРЖАТЬ ЭТИ ЭЛЕМЕНТЫ:
+
+1. ЛИЦО ПЕРСОНАЖА:
+   - "child's face clearly visible, looking at camera"
+   - "frontal face view, well-lit face, sharp facial features"
+   - "face in focus, detailed eyes, nose and mouth visible"
+   - "portrait style composition with clear face"
+
+2. ОСВЕЩЕНИЕ ЛИЦА:
+   - "soft natural lighting on face"
+   - "face well-illuminated, no shadows on face"
+   - "bright even lighting, face fully visible"
+
+3. КОМПОЗИЦИЯ:
+   - "medium close-up shot" или "portrait shot"
+   - "child centered in frame"
+   - "upper body and face visible"
+
+❌ СТРОГО ЗАПРЕЩЕНО (никогда не используй):
+   - profile view, side view, back view
+   - face obscured, face hidden, face in shadow
+   - looking away, looking down, eyes closed
+   - silhouette, backlit, contre-jour
+   - mask, helmet, sunglasses on face
+   - face partially covered, hair covering face
+   - very wide shot, full body distant shot
+   - crowd scenes where child is small
+
+✅ ВСЕГДА ДОБАВЛЯЙ В КОНЕЦ КАЖДОГО ПРОМПТА:
+   ", child's face clearly visible and centered, frontal view, well-lit portrait, face in sharp focus, looking at viewer"
+
+═══════════════════════════════════════════════════════════════════
+"""
         
         updated_scenes = []
         

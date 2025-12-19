@@ -14,6 +14,7 @@ router = APIRouter(prefix="", tags=["plot"])
 
 class CreatePlotRequest(BaseModel):
     child_id: int
+    num_pages: int = 20  # 10 или 20 страниц (сцен) без обложки
 
 
 class SceneResponse(BaseModel):
@@ -55,9 +56,19 @@ async def _create_plot_internal(
         # Формируем промпты для GPT
         system_prompt = """Ты — профессиональный детский писатель. Создаёшь уникальные сюжеты, которые никогда не повторяются."""
         
+        # Валидация количества страниц (синхронизация с фронтендом)
+        if request.num_pages not in (10, 20):
+            raise HTTPException(status_code=400, detail="Количество страниц должно быть 10 или 20")
+
+        num_scenes = request.num_pages  # Количество сцен = количество страниц
+        
         user_prompt = f"""Профиль ребёнка: {json.dumps(child_profile, ensure_ascii=False)}
 
 Сгенерируй уникальный сюжет книги.
+
+ВАЖНО: Книга должна содержать РОВНО {num_scenes} сцен (страниц с текстом и иллюстрациями).
+Обложка генерируется отдельно и НЕ входит в это число.
+Итого в книге будет: 1 обложка + {num_scenes} страниц = {num_scenes + 1} страниц всего.
 
 Формат ответа строго в JSON:
 {{
@@ -71,7 +82,9 @@ async def _create_plot_internal(
     }},
     ...
   ]
-}}"""
+}}
+
+Количество сцен в массиве "scenes" должно быть РОВНО {num_scenes}."""
         
         # Вызываем DeepSeek API
         gpt_response = await generate_text(user_prompt, system_prompt, json_mode=True)

@@ -24,3 +24,4 @@ numpy
 pillow
 email-validator
 apscheduler
+reportlab

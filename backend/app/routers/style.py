@@ -8,6 +8,7 @@ from ..db import get_db
 from ..models import Book, Child, Scene, ThemeStyle
 from ..services.deepseek_service import generate_text
 from ..core.deps import get_current_user
+from ..config.styles import ALL_STYLES, normalize_style, is_style_known
 
 router = APIRouter(prefix="", tags=["style"])
 
@@ -105,8 +106,11 @@ async def _select_style_internal(
             system_prompt = """Ты — эксперт по художественным стилям. Подбери уникальный визуальный стиль для детской книги. 
 Формат ответа строго JSON, без дополнительного текста: { "auto_style": "название стиля" }
 
-Доступные стили: storybook, cartoon, pixar, disney, watercolor, realistic, fantasy, minimalist, vintage, modern.
-Выбери один стиль, который лучше всего подходит для данного ребёнка и сюжета."""
+Доступные стили: classic, cartoon, fairytale, watercolor, pencil,
+disney, pixar, ghibli, dreamworks, oil_painting, impressionism, pastel, gouache,
+digital_art, fantasy, adventure, space, underwater, forest, winter, cute, funny,
+educational, retro, pop_art.
+Выбери один стиль из списка, который лучше всего подходит ребёнку и сюжету."""
             
             # Получаем moral из variables_used (где сохранен plot_data) или из child
             plot_moral = ""
@@ -149,7 +153,10 @@ async def _select_style_internal(
                 else:
                     raise ValueError(f"Не удалось найти JSON в ответе GPT. Ответ: {gpt_response[:200]}")
             
-            auto_style = style_data.get("auto_style", "storybook")
+            auto_style_raw = style_data.get("auto_style", "classic")
+            auto_style = normalize_style(auto_style_raw)
+            if not is_style_known(auto_style):
+                auto_style = "classic"
             
             # Сохраняем автоматический стиль
             theme_style = db.query(ThemeStyle).filter(ThemeStyle.book_id == book_uuid).first()

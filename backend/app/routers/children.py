@@ -712,6 +712,202 @@ def get_child_photos(
     }
 
 
+class PhotoDeleteRequest(BaseModel):
+    """Запрос на удаление фотографии"""
+    photo_url: str
+
+
+# ВАЖНО: DELETE endpoint должен быть определен ПЕРЕД PUT /{child_id}/photos/avatar
+# чтобы FastAPI правильно определил маршрут (более специфичный маршрут должен быть первым)
+# Используем add_api_route вместо декоратора для гарантированной регистрации
+def delete_child_photo(
+    child_id: str,
+    request: PhotoDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Удалить фотографию ребёнка.
+    
+    Endpoint: DELETE /children/{child_id}/photos
+    
+    Request Body (JSON):
+    {
+        "photo_url": "https://storyhero.ru/static/children/4/uuid.jpg"
+    }
+    
+    Логика:
+    1. Проверить, что child_id принадлежит текущему пользователю
+    2. Проверить, что photo_url существует среди фотографий этого ребёнка
+    3. Удалить файл с диска (из static/children/{child_id}/)
+    4. Если удаляемое фото является аватаркой (face_url), сбросить face_url на другую фотографию или null
+    5. Вернуть успешный ответ
+    
+    Returns:
+    {
+        "status": "ok",
+        "message": "Фото удалено"
+    }
+    
+    Raises:
+        400: Неверный формат child_id или photo_url
+        401: Не авторизован
+        403: Нет прав на удаление
+        404: Ребёнок или фото не найдены
+        500: Внутренняя ошибка сервера
+    """
+    from pathlib import Path
+    
+    logger.info(f"🗑️ Удаление фотографии для ребёнка {child_id}")
+    logger.info(f"   Пользователь: {current_user.get('sub') or current_user.get('id', 'unknown')}")
+    logger.info(f"   photo_url: {request.photo_url}")
+    
+    # 1. Проверка авторизации
+    user_id = current_user.get("sub") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    
+    # 2. Валидация child_id
+    try:
+        child_id_int = int(child_id)
+        if child_id_int <= 0:
+            raise ValueError("child_id должен быть положительным числом")
+    except (ValueError, TypeError):
+        logger.error(f"❌ delete_child_photo: Неверный формат child_id: '{child_id}'")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неверный формат ID ребёнка: '{child_id}'. Ожидается положительное число."
+        )
+    
+    # 3. Найти ребёнка и проверить права
+    try:
+        child = db.query(Child).filter(Child.id == child_id_int).first()
+        if not child:
+            logger.warning(f"⚠️ delete_child_photo: Ребёнок с ID {child_id_int} не найден")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Ребёнок с ID {child_id_int} не найден"
+            )
+        
+        if child.user_id != user_id:
+            logger.warning(f"⚠️ delete_child_photo: Попытка удаления фото ребёнка {child_id_int} другого пользователя")
+            raise HTTPException(
+                status_code=403,
+                detail="Доступ запрещён. Этот ребёнок принадлежит другому пользователю."
+            )
+        
+        logger.info(f"✓ Ребёнок найден: {child.name} (ID: {child_id_int})")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ delete_child_photo: Ошибка при проверке ребёнка: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при проверке существования ребёнка: {str(e)}"
+        )
+    
+    # 4. Проверить, что photo_url принадлежит этому ребёнку
+    photo_url = request.photo_url
+    expected_prefix = f"/static/children/{child_id}/"
+    if expected_prefix not in photo_url:
+        logger.warning(f"⚠️ delete_child_photo: URL фотографии не принадлежит ребёнку {child_id_int}")
+        raise HTTPException(
+            status_code=400,
+            detail="URL фотографии не принадлежит этому ребёнку"
+        )
+    
+    # 5. Извлечь имя файла из URL
+    try:
+        # Извлекаем путь после /static/
+        if "/static/" in photo_url:
+            relative_path = photo_url.split("/static/", 1)[1]
+            # Проверяем, что путь начинается с children/{child_id}/
+            if not relative_path.startswith(f"children/{child_id}/"):
+                raise ValueError("Неверный формат пути")
+            filename = relative_path.split(f"children/{child_id}/", 1)[1]
+        else:
+            # Если формат другой, пытаемся извлечь имя файла из конца URL
+            filename = photo_url.split("/")[-1]
+        
+        if not filename or "/" in filename:
+            raise ValueError("Неверное имя файла")
+        
+        logger.info(f"   Извлечено имя файла: {filename}")
+    except Exception as e:
+        logger.error(f"❌ delete_child_photo: Не удалось извлечь имя файла из URL: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неверный формат URL фотографии: {str(e)}"
+        )
+    
+    # 6. Проверить существование файла на диске
+    photo_path = Path(BASE_UPLOAD_DIR) / "children" / str(child_id_int) / filename
+    if not photo_path.exists():
+        logger.warning(f"⚠️ delete_child_photo: Файл не найден: {photo_path}")
+        raise HTTPException(
+            status_code=404,
+            detail="Фото не найдено"
+        )
+    
+    logger.info(f"   Путь к файлу: {photo_path}")
+    
+    # 7. Проверить, является ли это аватаркой
+    is_avatar = (child.face_url == photo_url)
+    logger.info(f"   Является аватаркой: {is_avatar}")
+    
+    # 8. Удалить файл с диска
+    try:
+        photo_path.unlink()
+        logger.info(f"✓ Файл удалён с диска: {photo_path}")
+    except Exception as e:
+        logger.error(f"❌ delete_child_photo: Ошибка при удалении файла: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при удалении файла: {str(e)}"
+        )
+    
+    # 9. Если это была аватарка, сбросить face_url
+    if is_avatar:
+        logger.info(f"   Обновление face_url (удалённая фотография была аватаркой)...")
+        try:
+            # Найти другую фотографию в директории
+            photos_dir = Path(BASE_UPLOAD_DIR) / "children" / str(child_id_int)
+            remaining_photos = []
+            if photos_dir.exists():
+                remaining_photos = [
+                    f for f in photos_dir.iterdir()
+                    if f.is_file() and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.webp')
+                ]
+            
+            if remaining_photos:
+                # Берем первую оставшуюся фотографию
+                remaining_photos.sort()  # Сортируем для стабильности
+                new_photo = remaining_photos[0]
+                base_url = get_server_base_url()
+                new_avatar_url = f"{base_url}/static/children/{child_id_int}/{new_photo.name}"
+                child.face_url = new_avatar_url
+                logger.info(f"✓ face_url обновлён на: {new_avatar_url}")
+            else:
+                # Нет других фотографий, сбрасываем face_url
+                child.face_url = None
+                logger.info(f"✓ face_url сброшен (нет других фотографий)")
+            
+            db.commit()
+            db.refresh(child)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"❌ delete_child_photo: Ошибка при обновлении face_url: {str(e)}", exc_info=True)
+            # Не критично, файл уже удалён
+            logger.warning(f"⚠️ Файл удалён, но не удалось обновить face_url в БД")
+    
+    logger.info(f"✅ Фотография успешно удалена для ребёнка {child_id_int}")
+    
+    return {
+        "status": "ok",
+        "message": "Фото удалено"
+    }
+
+
 class AvatarRequest(BaseModel):
     photo_url: str
 
@@ -871,3 +1067,13 @@ def delete_child(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Внутренняя ошибка сервера"
         )
+
+
+# Регистрируем DELETE endpoint вручную для гарантированной регистрации
+# ВАЖНО: Регистрация должна быть ПОСЛЕ определения функции delete_child_photo
+router.add_api_route(
+    "/{child_id}/photos",
+    delete_child_photo,
+    methods=["DELETE"],
+    status_code=status.HTTP_200_OK
+)

@@ -107,7 +107,7 @@ def get_server_base_url() -> str:
         server_protocol == "http" and server_port in ("80", "", None)
     ):
         return f"{server_protocol}://{server_host}"
-    
+
     # Для development с нестандартным портом - добавляем порт
     return f"{server_protocol}://{server_host}:{server_port}"
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import requests
 
 from ..db import get_db
@@ -22,7 +22,8 @@ async def _generate_draft_images_internal(
     data: ImageRequest,
     db: Session,
     user_id: str,
-    final_style: str = None
+    final_style: str = None,
+    task_id: Optional[str] = None
 ):
     """
     Внутренняя функция для генерации черновых изображений.
@@ -64,9 +65,25 @@ async def _generate_draft_images_internal(
     results = []
     scenes_with_prompts = [s for s in scenes if s.image_prompt]
     logger.info(f"🖼️ _generate_draft_images_internal: Сцен с промптами: {len(scenes_with_prompts)}")
+    
+    # Обновляем прогресс с общим количеством изображений
+    if task_id:
+        from ..services.tasks import update_task_progress
+        update_task_progress(task_id, {
+            "total_images": len(scenes_with_prompts),
+            "images_generated": 0
+        })
 
     for idx, scene in enumerate(scenes_with_prompts, 1):
         logger.info(f"🖼️ Генерация изображения {idx}/{len(scenes_with_prompts)} для сцены order={scene.order}")
+        
+        # Обновляем прогресс
+        if task_id:
+            from ..services.tasks import update_task_progress
+            update_task_progress(task_id, {
+                "images_generated": idx - 1,
+                "message": f"Генерация изображения {idx}/{len(scenes_with_prompts)}..."
+            })
         
         # Формируем промпт с финальным стилем (если есть)
         if final_style:
@@ -111,6 +128,14 @@ async def _generate_draft_images_internal(
         
         results.append({"order": scene.order, "image_url": image_url})
         logger.info(f"✓ Изображение сохранено в БД для сцены order={scene.order}")
+        
+        # Обновляем прогресс после успешной генерации
+        if task_id:
+            from ..services.tasks import update_task_progress
+            update_task_progress(task_id, {
+                "images_generated": idx,
+                "message": f"Изображение {idx}/{len(scenes_with_prompts)} готово ✓"
+            })
     
     db.commit()
     logger.info(f"✅ _generate_draft_images_internal: Успешно завершено для book_id={data.book_id}, сгенерировано изображений: {len(results)}")
