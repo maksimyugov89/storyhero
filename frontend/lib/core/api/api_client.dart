@@ -66,11 +66,19 @@ class RetryInterceptor extends Interceptor {
   }
 
   bool _shouldRetry(DioException err) {
+    // Не повторяем запросы при 502 (Bad Gateway) - это означает, что сервер недоступен
+    // Повторные попытки только задержат показ ошибки пользователю
+    if (err.response?.statusCode == 502) {
+      return false;
+    }
+    
     return err.type == DioExceptionType.connectionTimeout ||
         err.type == DioExceptionType.sendTimeout ||
         err.type == DioExceptionType.receiveTimeout ||
         err.type == DioExceptionType.connectionError ||
-        (err.response?.statusCode != null && err.response!.statusCode! >= 500);
+        (err.response?.statusCode != null && 
+         err.response!.statusCode! >= 500 && 
+         err.response!.statusCode != 502); // Исключаем 502 из повторных попыток
   }
 }
 

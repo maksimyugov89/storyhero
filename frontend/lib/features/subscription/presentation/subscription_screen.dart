@@ -285,9 +285,13 @@ class SubscriptionScreen extends HookConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  b['text'] as String,
-                  style: AppTypography.bodyMedium,
+                Expanded(
+                  child: Text(
+                    b['text'] as String,
+                    style: AppTypography.bodyMedium,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -393,6 +397,7 @@ class SubscriptionScreen extends HookConsumerWidget {
           style: safeCopyWith(
             AppTypography.headlineSmall,
             fontWeight: FontWeight.bold,
+            color: AppColors.onBackground,
           ),
         ),
         const SizedBox(height: AppSpacing.md),
@@ -420,11 +425,18 @@ class SubscriptionScreen extends HookConsumerWidget {
                     padding: const EdgeInsets.only(right: 4),
                     child: Icon(Icons.lock, size: 14, color: AppColors.onSurfaceVariant),
                   ),
-                Text(
-                  style.name,
-                  style: safeCopyWith(
-                    AppTypography.labelSmall,
-                    color: isSubscribed ? AppColors.primary : AppColors.onSurfaceVariant,
+                Flexible(
+                  child: Text(
+                    style.name,
+                    style: safeCopyWith(
+                      AppTypography.labelSmall,
+                      color: isSubscribed 
+                          ? AppColors.primary 
+                          : Colors.white.withOpacity(0.9),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -437,7 +449,8 @@ class SubscriptionScreen extends HookConsumerWidget {
             'и ещё ${premiumStyles.length - 10} стилей...',
             style: safeCopyWith(
               AppTypography.bodySmall,
-              color: AppColors.onSurfaceVariant,
+              color: AppColors.onBackground.withOpacity(0.9),
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],

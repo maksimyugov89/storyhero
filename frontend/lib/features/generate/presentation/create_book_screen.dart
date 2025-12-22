@@ -28,6 +28,7 @@ final childrenProvider = FutureProvider<List<Child>>((ref) async {
 final selectedChildProvider = StateProvider<Child?>((ref) => null);
 final selectedStyleProvider = StateProvider<String?>((ref) => null);
 final selectedPagesProvider = StateProvider<int>((ref) => 20); // 10 или 20 страниц
+final bookTopicProvider = StateProvider<String>((ref) => ''); // Описание темы книги
 final generationLockProvider = StateProvider<bool>((ref) => false);
 
 class CreateBookScreen extends HookConsumerWidget {
@@ -66,8 +67,10 @@ class CreateBookScreen extends HookConsumerWidget {
         return;
       }
 
-      if (selectedChild == null || selectedStyle == null) {
-        errorMessage.value = 'Выберите ребёнка и стиль';
+      final bookTheme = ref.read(bookTopicProvider);
+      
+      if (selectedChild == null || selectedStyle == null || bookTheme.trim().isEmpty) {
+        errorMessage.value = 'Заполните все обязательные поля';
         return;
       }
 
@@ -87,6 +90,7 @@ class CreateBookScreen extends HookConsumerWidget {
             childId: selectedChild.id,
             style: selectedStyle,
             numPages: numPages,
+            theme: bookTheme.trim(), // theme - обязательное поле согласно API
           );
 
           if (context.mounted) {
@@ -151,7 +155,7 @@ class CreateBookScreen extends HookConsumerWidget {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppAppBar(
-          title: 'Создать книгу ${currentStep.value}/3',
+          title: 'Создать книгу ${currentStep.value}/4',
           leading: IconButton(
             icon: AssetIcon(
               assetPath: AppIcons.back,
@@ -174,7 +178,7 @@ class CreateBookScreen extends HookConsumerWidget {
             Padding(
               padding: AppSpacing.paddingMD,
               child: Row(
-                children:                   List.generate(3, (index) {
+                children:                   List.generate(4, (index) {
                     final step = index + 1;
                     final isActive = step <= currentStep.value;
                   
@@ -192,7 +196,7 @@ class CreateBookScreen extends HookConsumerWidget {
                             ),
                           ),
                         ),
-                        if (step < 3) const SizedBox(width: 8),
+                        if (step < 4) const SizedBox(width: 8),
                       ],
                     ),
                   );
@@ -234,14 +238,21 @@ class CreateBookScreen extends HookConsumerWidget {
                     ),
                   if (currentStep.value > 1) const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: currentStep.value < 3
+                    child: currentStep.value < 4
                         ? AppMagicButton(
                             onPressed: () {
                               if (currentStep.value == 1 && selectedChild == null) {
                                 errorMessage.value = 'Выберите ребёнка';
                                 return;
                               }
-                              if (currentStep.value == 2 && selectedStyle == null) {
+                              if (currentStep.value == 2) {
+                                final topic = ref.read(bookTopicProvider);
+                                if (topic.trim().isEmpty) {
+                                  errorMessage.value = 'Опишите, о чём будет книга';
+                                  return;
+                                }
+                              }
+                              if (currentStep.value == 3 && selectedStyle == null) {
                                 errorMessage.value = 'Выберите стиль';
                                 return;
                               }
@@ -311,9 +322,11 @@ class CreateBookScreen extends HookConsumerWidget {
       case 1:
         return _buildStep1(context, ref, childrenAsync, selectedChild, errorMessage);
       case 2:
-        return _buildStep2(context, ref, selectedStyle, errorMessage);
+        return _buildStep2(context, ref, errorMessage);
       case 3:
-        return _buildStep3(context, ref, selectedChild, selectedStyle, errorMessage);
+        return _buildStep3(context, ref, selectedStyle, errorMessage);
+      case 4:
+        return _buildStep4(context, ref, selectedChild, selectedStyle, errorMessage);
       default:
         return const SizedBox.shrink();
     }
@@ -527,6 +540,202 @@ class CreateBookScreen extends HookConsumerWidget {
   }
 
   Widget _buildStep2(
+    BuildContext context,
+    WidgetRef ref,
+    String? errorMessage,
+  ) {
+    final currentTopic = ref.watch(bookTopicProvider);
+    final topicController = useTextEditingController(
+      text: currentTopic,
+    );
+    
+    // Синхронизируем контроллер с провайдером при изменении провайдера
+    useEffect(() {
+      if (topicController.text != currentTopic) {
+        topicController.text = currentTopic;
+      }
+      return null;
+    }, [currentTopic]);
+    
+    // Обновляем провайдер при изменении текста
+    useEffect(() {
+      void listener() {
+        final newValue = topicController.text;
+        if (ref.read(bookTopicProvider) != newValue) {
+          ref.read(bookTopicProvider.notifier).state = newValue;
+        }
+      }
+      topicController.addListener(listener);
+      return () => topicController.removeListener(listener);
+    }, []);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'О чём будет книга?',
+          style: AppTypography.headlineMedium,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Кратко опишите тему книги. Например: о поездке в отпуск, о дне рождения, о мероприятии, о приключении и т.д.',
+          style: safeCopyWith(
+            AppTypography.bodyLarge,
+            color: AppColors.onBackground.withOpacity(0.9),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        
+        if (errorMessage != null) ...[
+          Container(
+            padding: AppSpacing.paddingMD,
+            decoration: BoxDecoration(
+              color: AppColors.error.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.error, width: 2),
+            ),
+            child: Row(
+              children: [
+                AssetIcon(
+                  assetPath: AppIcons.alert,
+                  size: 20,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    errorMessage,
+                    style: safeCopyWith(
+                      AppTypography.bodyMedium,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
+        
+        AppMagicCard(
+          padding: AppSpacing.paddingMD,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: topicController,
+                maxLines: 6,
+                minLines: 4,
+                decoration: InputDecoration(
+                  hintText: 'Например: о поездке на море этим летом, где мы купались, загорали и строили замки из песка',
+                  hintStyle: safeCopyWith(
+                    AppTypography.bodyMedium,
+                    color: AppColors.onBackground.withOpacity(0.5),
+                  ),
+                  border: InputBorder.none,
+                ),
+                style: safeCopyWith(
+                  AppTypography.bodyLarge,
+                  color: AppColors.onBackground,
+                ),
+                textInputAction: TextInputAction.newline,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        
+        // Примеры тем
+        Text(
+          'Примеры тем:',
+          style: safeCopyWith(
+            AppTypography.labelLarge,
+            fontWeight: FontWeight.bold,
+            color: AppColors.onBackground,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            _buildTopicExampleChip(
+              context,
+              ref,
+              topicController,
+              'О дне рождения',
+            ),
+            _buildTopicExampleChip(
+              context,
+              ref,
+              topicController,
+              'О поездке в отпуск',
+            ),
+            _buildTopicExampleChip(
+              context,
+              ref,
+              topicController,
+              'О праздновании Нового года',
+            ),
+            _buildTopicExampleChip(
+              context,
+              ref,
+              topicController,
+              'О походе в зоопарк',
+            ),
+            _buildTopicExampleChip(
+              context,
+              ref,
+              topicController,
+              'О первом дне в школе',
+            ),
+            _buildTopicExampleChip(
+              context,
+              ref,
+              topicController,
+              'О летних каникулах',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildTopicExampleChip(
+    BuildContext context,
+    WidgetRef ref,
+    TextEditingController controller,
+    String example,
+  ) {
+    return GestureDetector(
+      onTap: () {
+        controller.text = example;
+        ref.read(bookTopicProvider.notifier).state = example;
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: AppColors.primary.withOpacity(0.5),
+            width: 1.5,
+          ),
+        ),
+        child: Text(
+          example,
+          style: safeCopyWith(
+            AppTypography.bodySmall,
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStep3(
     BuildContext context,
     WidgetRef ref,
     String? selectedStyle,
@@ -927,7 +1136,7 @@ class CreateBookScreen extends HookConsumerWidget {
     );
   }
 
-  Widget _buildStep3(
+  Widget _buildStep4(
     BuildContext context,
     WidgetRef ref,
     Child? selectedChild,
@@ -1083,6 +1292,29 @@ class CreateBookScreen extends HookConsumerWidget {
               Text(
                 '${ref.watch(selectedPagesProvider)} страниц',
                 style: AppTypography.headlineSmall,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                children: [
+                  Icon(
+                    Icons.edit_note,
+                    size: 24,
+                    color: Colors.purple,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    'Тема книги',
+                    style: safeCopyWith(
+                      AppTypography.labelLarge,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                ref.watch(bookTopicProvider),
+                style: AppTypography.bodyLarge,
               ),
             ],
           ),

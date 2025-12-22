@@ -22,12 +22,36 @@ enum BookGenerationStep {
   done;
 
   /// Преобразование строки из backend в enum
+  /// Поддерживает значения stage из API документации:
+  /// "starting", "creating_plot", "plot_ready", "creating_text", "text_ready",
+  /// "creating_prompts", "selecting_style", "generating_draft_images",
+  /// "generating_final_images", "completed"
   static BookGenerationStep? fromString(String? step) {
     if (step == null) return null;
     
     final normalized = step.toLowerCase().trim();
     
     switch (normalized) {
+      // Новые значения из API документации
+      case 'starting':
+        return BookGenerationStep.profile;
+      case 'creating_plot':
+      case 'plot_ready':
+        return BookGenerationStep.plot;
+      case 'creating_text':
+      case 'text_ready':
+        return BookGenerationStep.text;
+      case 'creating_prompts':
+      case 'selecting_style':
+        return BookGenerationStep.prompts;
+      case 'generating_draft_images':
+        return BookGenerationStep.draftImages;
+      case 'generating_final_images':
+        return BookGenerationStep.finalImages;
+      case 'completed':
+        return BookGenerationStep.done;
+      
+      // Старые значения для обратной совместимости
       case 'profile':
       case 'создание профиля':
       case 'профиль':
@@ -60,7 +84,6 @@ enum BookGenerationStep {
       case 'генерация финальных изображений':
         return BookGenerationStep.finalImages;
       case 'done':
-      case 'completed':
       case 'завершение':
       case 'готово':
         return BookGenerationStep.done;

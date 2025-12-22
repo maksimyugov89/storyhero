@@ -7,6 +7,8 @@ import '../../../../app/routes/route_names.dart';
 import '../../../../core/api/backend_api.dart';
 import '../../../../core/models/task_status.dart';
 import '../../../../core/models/book_generation_step.dart';
+import '../../../../core/models/book.dart';
+import '../../../../core/models/child.dart';
 import '../../../../core/presentation/layouts/app_page.dart';
 import '../../../../core/presentation/design_system/app_colors.dart';
 import '../../../../core/presentation/design_system/app_typography.dart';
@@ -20,12 +22,22 @@ import '../../../../core/presentation/widgets/buttons/app_button.dart';
 import '../../../../core/widgets/error_widget.dart';
 import '../../../../ui/components/asset_icon.dart';
 import 'create_book_screen.dart';
-import '../../../../app/routes/route_names.dart';
 
 final taskStatusProvider = FutureProvider.family<TaskStatus, String>(
   (ref, taskId) async {
     final api = ref.watch(backendApiProvider);
-    return await api.checkTaskStatus(taskId);
+    try {
+      return await api.checkTaskStatus(taskId);
+    } on TaskNotFoundException catch (e) {
+      // При 404 создаем TaskStatus со статусом 'lost'
+      // Это позволит UI обработать ситуацию
+      print('[TaskStatusProvider] Task not found: ${e.taskId}, creating lost status');
+      return TaskStatus(
+        id: taskId,
+        status: 'lost',
+        error: 'Задача была потеряна при перезапуске сервера',
+      );
+    }
   },
 );
 
@@ -53,6 +65,8 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
   String? _lastStatus;
   bool _navigated = false;
   bool _lockUnlocked = false;
+  String? _savedBookId; // Сохраняем book_id для продолжения генерации
+  String? _savedChildId; // Сохраняем child_id для получения face_url и style
 
   @override
   void dispose() {
@@ -157,12 +171,37 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
   void _handleTaskStateChange(TaskStatus? previous, TaskStatus current) {
     if (_isDisposed || !mounted) return;
 
+    // ПРОВЕРКА 0: Задача потеряна (status='lost')
+    if (current.isLost) {
+      _stopPolling();
+      // Сохраняем book_id из meta или progress для продолжения генерации
+      final bookId = current.bookIdValue;
+      if (bookId != null) {
+        _savedBookId = bookId;
+        // Получаем child_id из книги для получения face_url и style
+        _loadBookInfoForContinue(bookId);
+      }
+      if (!_lockUnlocked) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_isDisposed && mounted) {
+            _unlockGeneration();
+          }
+        });
+      }
+      return;
+    }
+
     // ПРОВЕРКА 1: Ошибка в задаче
     // ВАЖНО: Проверяем error ПЕРЕД проверкой result
     // Если error !== null, считаем задачу завершенной с ошибкой
     if (current.error != null && current.error!.isNotEmpty) {
       // Задача завершена с ошибкой - останавливаем polling
       _stopPolling();
+      // Сохраняем book_id если есть для возможности продолжения
+      final bookId = current.bookIdValue;
+      if (bookId != null) {
+        _savedBookId = bookId;
+      }
       if (!_lockUnlocked) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_isDisposed && mounted) {
@@ -220,12 +259,18 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
       return;
     }
 
+    // Сохраняем book_id для возможного продолжения генерации
+    final bookIdValue = current.bookIdValue;
+    if (bookIdValue != null) {
+      _savedBookId = bookIdValue;
+    }
+    
     // Переходим к книге сразу после получения book_id, даже если изображения еще не готовы
     // Это позволяет показывать книгу с placeholder для изображений
-    if (current.bookId != null && !_navigated) {
+    if (bookIdValue != null && !_navigated) {
       // Проверяем, можно ли переходить к книге
       // Переходим если статус success/completed или если есть хотя бы текст (step >= text)
-      final canNavigate = current.bookId != null &&
+      final canNavigate = bookIdValue != null &&
                           (currentStatus == 'success' ||
                            currentStatus == 'completed' ||
                            currentStep == BookGenerationStep.done ||
@@ -238,7 +283,7 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
       _stopPolling();
       _navigated = true;
       
-      final bookId = current.bookId;
+      final bookId = bookIdValue;
       
       WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_isDisposed || !mounted || bookId == null) return;
@@ -279,11 +324,114 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
     }
   }
 
+  /// Загрузить информацию о книге для продолжения генерации
+  Future<void> _loadBookInfoForContinue(String bookId) async {
+    try {
+      final api = ref.read(backendApiProvider);
+      final book = await api.getBook(bookId);
+      _savedChildId = book.childId;
+    } catch (e) {
+      print('[TaskStatusScreen] Ошибка загрузки информации о книге: $e');
+    }
+  }
+
+  /// Продолжить генерацию финальных изображений
+  Future<void> _handleContinueGeneration() async {
+    if (_savedBookId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Не удалось определить книгу для продолжения'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Получаем информацию о ребенке для face_url
+      String? faceUrl;
+      String? style;
+      
+      if (_savedChildId != null) {
+        try {
+          final api = ref.read(backendApiProvider);
+          final children = await api.getChildren();
+          final child = children.firstWhere(
+            (c) => c.id == _savedChildId,
+            orElse: () => throw Exception('Ребенок не найден'),
+          );
+          faceUrl = child.faceUrl;
+          
+          // Получаем книгу для определения стиля
+          final book = await api.getBook(_savedBookId!);
+          // Стиль можно получить из метаданных книги или использовать дефолтный
+          // Пока используем дефолтный стиль 'disney'
+          style = 'disney'; // TODO: получить из метаданных книги
+        } catch (e) {
+          print('[TaskStatusScreen] Ошибка получения данных ребенка: $e');
+        }
+      }
+
+      if (faceUrl == null || faceUrl.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Не удалось получить фото ребенка. Пожалуйста, обновите фото ребенка и попробуйте снова.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+
+      if (style == null) {
+        style = 'disney'; // Дефолтный стиль
+      }
+
+      // Показываем индикатор загрузки
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Продолжение генерации...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Вызываем API для продолжения генерации
+      final api = ref.read(backendApiProvider);
+      final response = await api.continueFinalImagesGeneration(
+        bookId: _savedBookId!,
+        faceUrl: faceUrl,
+        style: style,
+      );
+
+      // Переходим к отслеживанию новой задачи
+      if (mounted) {
+        _navigated = false;
+        _lockUnlocked = false;
+        ref.read(generationLockProvider.notifier).state = true;
+        
+        // Переходим к экрану отслеживания новой задачи
+        context.go(RouteNames.taskStatus.replaceAll(':id', response.taskId));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при продолжении генерации: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   double _getProgress(TaskStatus task) {
-    if (task.progress != null && task.progress! >= 0 && task.progress! <= 1) {
-      return task.progress!;
+    // Используем вычисленный прогресс из расширения (из current_step/total_steps)
+    final calculatedProgress = task.generationStatus.progress;
+    if (calculatedProgress != null && calculatedProgress >= 0 && calculatedProgress <= 100) {
+      return calculatedProgress / 100; // Конвертируем из процентов в 0-1
     }
     
+    // Fallback: используем этап генерации для приблизительного прогресса
     final step = task.generationStatus.step;
     switch (step) {
       case BookGenerationStep.profile:
@@ -307,12 +455,25 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
   
   String? _getDetailedProgressMessage(TaskStatus task) {
     final step = task.generationStatus.step;
-    final progress = task.progress;
     
-    if (progress != null && progress > 0 && progress < 1) {
-      if (step == BookGenerationStep.draftImages || step == BookGenerationStep.finalImages) {
-        final totalImages = 4;
-        final currentImage = ((progress * totalImages).ceil()).clamp(1, totalImages);
+    // Используем информацию о прогрессе изображений из TaskProgress
+    if (step == BookGenerationStep.draftImages || step == BookGenerationStep.finalImages) {
+      final progress = task.progress;
+      if (progress?.imagesGenerated != null && progress?.totalImages != null) {
+        final imagesGenerated = progress!.imagesGenerated!;
+        final totalImages = progress.totalImages!;
+        if (imagesGenerated > 0 && imagesGenerated < totalImages) {
+          return 'Генерация изображения ${imagesGenerated + 1} из $totalImages';
+        }
+      }
+      
+      // Fallback: используем вычисленный прогресс
+      final calculatedProgress = task.generationStatus.progress;
+      if (calculatedProgress != null && calculatedProgress > 0 && calculatedProgress < 100) {
+        // Приблизительно вычисляем количество изображений
+        final totalImages = progress?.totalImages ?? 11; // По умолчанию 11 (1 обложка + 10 страниц)
+        final progressValue = calculatedProgress / 100; // Конвертируем из процентов в 0-1
+        final currentImage = ((progressValue * totalImages).ceil()).clamp(1, totalImages);
         return 'Генерация изображения $currentImage из $totalImages';
       }
     }
@@ -509,7 +670,7 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
         body: taskAsync.when(
           data: (task) {
             // Pure UI rendering - no side effects
-            if (task.status == 'completed' && task.bookId != null) {
+            if (task.status == 'completed' && task.bookIdValue != null) {
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -553,6 +714,63 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                       ),
                     ),
                   ],
+                ),
+              );
+            }
+
+            // ПРОВЕРКА: Задача потеряна (status='lost')
+            if (task.isLost) {
+              return Center(
+                child: Padding(
+                  padding: AppSpacing.paddingMD,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AssetIcon(
+                        assetPath: AppIcons.alert,
+                        size: 64,
+                        color: AppColors.warning,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        'Генерация была прервана',
+                        style: safeCopyWith(
+                          AppTypography.headlineMedium,
+                          color: AppColors.warning,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Container(
+                        padding: AppSpacing.paddingMD,
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Генерация была прервана при перезапуске сервера. Книга готова для продолжения генерации финальных изображений.',
+                          style: safeCopyWith(
+                            AppTypography.bodyMedium,
+                            color: AppColors.onBackground,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      if (_savedBookId != null) ...[
+                        const SizedBox(height: AppSpacing.xl),
+                        AppButton(
+                          text: 'Продолжить генерацию',
+                          onPressed: _handleContinueGeneration,
+                        ),
+                      ],
+                      const SizedBox(height: AppSpacing.md),
+                      AppButton(
+                        text: 'Выйти',
+                        outlined: true,
+                        onPressed: _handleExit,
+                      ),
+                    ],
+                  ),
                 ),
               );
             }
@@ -685,6 +903,30 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                           textAlign: TextAlign.center,
                         ),
                       ),
+                      // Если есть book_id, предлагаем продолжить генерацию
+                      if (_savedBookId != null) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        Container(
+                          padding: AppSpacing.paddingMD,
+                          decoration: BoxDecoration(
+                            color: AppColors.warning.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Книга была создана. Вы можете продолжить генерацию финальных изображений.',
+                            style: safeCopyWith(
+                              AppTypography.bodySmall,
+                              color: AppColors.onBackground,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        AppButton(
+                          text: 'Продолжить генерацию',
+                          onPressed: _handleContinueGeneration,
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.xl),
                       AppButton(
                         text: 'Повторить',

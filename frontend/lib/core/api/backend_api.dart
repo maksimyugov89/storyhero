@@ -16,6 +16,16 @@ final backendApiProvider = Provider<BackendApi>((ref) {
   return BackendApi(dio);
 });
 
+/// Исключение для случая, когда задача не найдена (404)
+class TaskNotFoundException implements Exception {
+  final String taskId;
+  
+  TaskNotFoundException({required this.taskId});
+  
+  @override
+  String toString() => 'Задача $taskId не найдена';
+}
+
 class BackendApi {
   final Dio _dio;
 
@@ -676,6 +686,15 @@ class BackendApi {
         );
       }
       
+      // 405 - метод не поддерживается (бэкенд не реализовал GET для этого эндпоинта)
+      if (statusCode == 405) {
+        print('[BackendApi] getChildPhotos: Метод GET не поддерживается (405). Возвращаем пустой список.');
+        return ChildPhotosResponse(
+          childId: childId,
+          photos: [],
+        );
+      }
+      
       // 401 - требуется авторизация
       if (statusCode == 401) {
         print('[BackendApi] getChildPhotos: Требуется авторизация (401)');
@@ -1030,17 +1049,19 @@ class BackendApi {
     required String childId,
     required String style,
     int numPages = 20, // Количество страниц без учета обложки
+    required String theme, // Описание темы книги (обязательное поле согласно API)
   }) async {
     try {
       print('[BackendApi] [API REQUEST] POST /books/generate_full_book');
-      print('[BackendApi] Request data: {child_id: $childId, style: $style, num_pages: $numPages}');
+      print('[BackendApi] Request data: {child_id: $childId, style: $style, num_pages: $numPages, theme: $theme}');
       
       final response = await _dio.post(
         '/books/generate_full_book',
         data: {
           'child_id': childId,
           'style': style,
-          'num_pages': numPages, // 20 страниц без учета обложки
+          'num_pages': numPages, // 10 или 20 страниц без учета обложки
+          'theme': theme, // Описание темы книги (обязательное поле)
         },
       );
       
@@ -1142,15 +1163,65 @@ class BackendApi {
       print('[BackendApi] [API ERROR] DioException: ${e.message}');
       print('[BackendApi] [API ERROR] URL: ${e.requestOptions.uri}');
       if (e.response?.statusCode == 404) {
-        throw Exception('Задача не найдена. Проверьте правильность task_id или обратитесь к администратору.');
+        // При 404 пробуем создать TaskStatus со статусом 'lost'
+        // Это позволит UI обработать ситуацию и предложить продолжить генерацию
+        print('[BackendApi] Task not found (404), creating lost status for taskId: $taskId');
+        throw TaskNotFoundException(taskId: taskId);
       }
       if (e.response?.statusCode == 401) {
         throw Exception('Требуется авторизация. Пожалуйста, войдите в аккаунт заново.');
       }
       rethrow;
     } catch (e) {
+      if (e is TaskNotFoundException) rethrow;
       if (e.toString().contains('type') && e.toString().contains('Null')) {
         throw Exception('Ошибка парсинга ответа от сервера: некорректный формат данных');
+      }
+      rethrow;
+    }
+  }
+  
+  /// Продолжить генерацию финальных изображений для книги
+  /// POST /api/v1/generate_final_images
+  Future<GenerateFullBookResponse> continueFinalImagesGeneration({
+    required String bookId,
+    required String faceUrl,
+    required String style,
+  }) async {
+    try {
+      print('[BackendApi] [API REQUEST] POST /generate_final_images');
+      print('[BackendApi] Request data: {book_id: $bookId, face_url: $faceUrl, style: $style}');
+      
+      final response = await _dio.post(
+        '/generate_final_images',
+        data: {
+          'book_id': bookId,
+          'face_url': faceUrl,
+          'style': style,
+        },
+      );
+      
+      print('[BackendApi] [API RESPONSE] Status: ${response.statusCode}');
+      print('[BackendApi] [API RESPONSE] Data: ${response.data}');
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data as Map<String, dynamic>;
+        return GenerateFullBookResponse.fromJson(data);
+      }
+      throw Exception('Не удалось продолжить генерацию: статус ${response.statusCode}');
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      if (statusCode == 404) {
+        throw Exception('Книга не найдена. Проверьте правильность book_id.');
+      }
+      if (statusCode == 401) {
+        throw Exception('Требуется авторизация. Пожалуйста, войдите в аккаунт.');
+      }
+      if (statusCode == 400) {
+        final errorMessage = e.response?.data?['detail']?.toString() ?? 
+                           e.response?.data?['message']?.toString() ?? 
+                           'Некорректный запрос';
+        throw Exception(errorMessage);
       }
       rethrow;
     }

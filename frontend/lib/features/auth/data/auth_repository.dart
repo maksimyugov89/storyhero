@@ -124,9 +124,24 @@ class AuthRepository {
         final statusCode = e.response!.statusCode;
         final responseData = e.response!.data;
         
+        print('[AuthRepository] signIn: Обработка ошибки. Status: $statusCode, Data type: ${responseData.runtimeType}');
+        
         // Парсим поле detail из ответа
         String errorMessage = 'Ошибка входа';
-        if (responseData is Map<String, dynamic> && responseData.containsKey('detail')) {
+        
+        // Для ошибок сервера (500+) сразу показываем понятное сообщение
+        if (statusCode != null && statusCode >= 500) {
+          if (statusCode == 502) {
+            errorMessage = 'Сервер временно недоступен. Проверьте подключение к интернету и попробуйте позже.';
+            print('[AuthRepository] signIn: Ошибка 502 - сервер недоступен');
+          } else if (statusCode == 503) {
+            errorMessage = 'Сервер перегружен. Попробуйте позже.';
+          } else if (statusCode == 504) {
+            errorMessage = 'Превышено время ожидания ответа от сервера. Попробуйте позже.';
+          } else {
+            errorMessage = 'Сервер недоступен. Попробуйте позже.';
+          }
+        } else if (responseData is Map<String, dynamic> && responseData.containsKey('detail')) {
           final detail = responseData['detail'];
           if (detail is String) {
             errorMessage = detail;
@@ -147,12 +162,23 @@ class AuthRepository {
             errorMessage = detail.toString();
           }
         } else if (responseData is String) {
-          errorMessage = responseData;
+          // Используем строковый ответ как сообщение об ошибке
+          // Проверяем, не является ли это HTML (для случаев, когда statusCode < 500)
+          final responseStr = responseData.trim().toLowerCase();
+          if (responseStr.startsWith('<!doctype') || 
+              responseStr.startsWith('<html') ||
+              responseStr.contains('<html>')) {
+            // Это HTML, но statusCode < 500 - странный случай, используем общее сообщение
+            errorMessage = 'Ошибка при обработке ответа сервера';
+          } else {
+            errorMessage = responseData;
+          }
         }
         
         // Преобразуем технические сообщения в понятные для пользователя
+        // Не перезаписываем сообщения об ошибках сервера (500+)
         if (statusCode != null && statusCode >= 500) {
-          errorMessage = 'Сервер недоступен. Попробуйте позже.';
+          // Сообщение уже установлено выше, не перезаписываем
         } else if (statusCode == 401 || statusCode == 403) {
           errorMessage = 'Неверный email или пароль';
         } else if (statusCode == 400 || statusCode == 422) {
@@ -188,8 +214,6 @@ class AuthRepository {
     }
         } else if (statusCode == 404) {
           errorMessage = 'Сервер не найден. Проверьте настройки подключения.';
-        } else if (statusCode == 500 || statusCode == 502 || statusCode == 503) {
-          errorMessage = 'Ошибка сервера. Попробуйте позже.';
         }
         
         throw Exception(errorMessage);

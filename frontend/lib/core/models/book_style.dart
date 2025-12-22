@@ -187,3 +187,4 @@ List<BookStyle> get freeStyles => allBookStyles.where((s) => !s.isPremium).toLis
 /// Получить только премиум стили
 List<BookStyle> get premiumStyles => allBookStyles.where((s) => s.isPremium).toList();
 
+
