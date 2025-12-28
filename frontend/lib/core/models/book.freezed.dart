@@ -29,7 +29,7 @@ mixin _$Book {
   @JsonKey(name: 'user_id')
   String? get userId => throw _privateConstructorUsedError;
   String get title => throw _privateConstructorUsedError;
-  @JsonKey(name: 'created_at')
+  @JsonKey(name: 'created_at', fromJson: _dateTimeFromJson)
   DateTime get createdAt => throw _privateConstructorUsedError; // статус книги (draft / editing / final)
   @JsonKey(name: 'status')
   String get status => throw _privateConstructorUsedError; // необязательные поля
@@ -65,7 +65,8 @@ abstract class $BookCopyWith<$Res> {
     @JsonKey(name: 'child_id', fromJson: _childIdToString) String childId,
     @JsonKey(name: 'user_id') String? userId,
     String title,
-    @JsonKey(name: 'created_at') DateTime createdAt,
+    @JsonKey(name: 'created_at', fromJson: _dateTimeFromJson)
+    DateTime createdAt,
     @JsonKey(name: 'status') String status,
     @JsonKey(name: 'cover_url') String? coverUrl,
     @JsonKey(name: 'final_pdf_url') String? finalPdfUrl,
@@ -173,7 +174,8 @@ abstract class _$$BookImplCopyWith<$Res> implements $BookCopyWith<$Res> {
     @JsonKey(name: 'child_id', fromJson: _childIdToString) String childId,
     @JsonKey(name: 'user_id') String? userId,
     String title,
-    @JsonKey(name: 'created_at') DateTime createdAt,
+    @JsonKey(name: 'created_at', fromJson: _dateTimeFromJson)
+    DateTime createdAt,
     @JsonKey(name: 'status') String status,
     @JsonKey(name: 'cover_url') String? coverUrl,
     @JsonKey(name: 'final_pdf_url') String? finalPdfUrl,
@@ -273,7 +275,8 @@ class _$BookImpl implements _Book {
     required this.childId,
     @JsonKey(name: 'user_id') this.userId,
     required this.title,
-    @JsonKey(name: 'created_at') required this.createdAt,
+    @JsonKey(name: 'created_at', fromJson: _dateTimeFromJson)
+    required this.createdAt,
     @JsonKey(name: 'status') this.status = 'draft',
     @JsonKey(name: 'cover_url') this.coverUrl,
     @JsonKey(name: 'final_pdf_url') this.finalPdfUrl,
@@ -301,7 +304,7 @@ class _$BookImpl implements _Book {
   @override
   final String title;
   @override
-  @JsonKey(name: 'created_at')
+  @JsonKey(name: 'created_at', fromJson: _dateTimeFromJson)
   final DateTime createdAt;
   // статус книги (draft / editing / final)
   @override
@@ -423,7 +426,8 @@ abstract class _Book implements Book {
     required final String childId,
     @JsonKey(name: 'user_id') final String? userId,
     required final String title,
-    @JsonKey(name: 'created_at') required final DateTime createdAt,
+    @JsonKey(name: 'created_at', fromJson: _dateTimeFromJson)
+    required final DateTime createdAt,
     @JsonKey(name: 'status') final String status,
     @JsonKey(name: 'cover_url') final String? coverUrl,
     @JsonKey(name: 'final_pdf_url') final String? finalPdfUrl,
@@ -448,7 +452,7 @@ abstract class _Book implements Book {
   @override
   String get title;
   @override
-  @JsonKey(name: 'created_at')
+  @JsonKey(name: 'created_at', fromJson: _dateTimeFromJson)
   DateTime get createdAt; // статус книги (draft / editing / final)
   @override
   @JsonKey(name: 'status')

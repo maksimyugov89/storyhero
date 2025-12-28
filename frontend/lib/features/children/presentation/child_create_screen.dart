@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../app/routes/route_names.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/api/backend_api.dart';
+import '../../../../core/models/child.dart';
 import '../../../../core/presentation/layouts/app_page.dart';
 import '../../../../core/presentation/design_system/app_colors.dart';
 import '../../../../core/presentation/design_system/app_typography.dart';
@@ -28,6 +29,7 @@ class ChildCreateScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final nameController = useTextEditingController();
     final ageController = useTextEditingController();
+    final selectedGender = useState<ChildGender?>(null);
     final interestsController = useTextEditingController();
     final fearsController = useTextEditingController();
     final characterController = useTextEditingController();
@@ -45,7 +47,7 @@ class ChildCreateScreen extends HookConsumerWidget {
     }, []);
 
     Future<void> handleCreate() async {
-      if (nameController.text.isEmpty || ageController.text.isEmpty) {
+      if (nameController.text.isEmpty || ageController.text.isEmpty || selectedGender.value == null) {
         errorMessage.value = 'Заполните обязательные поля';
         return;
       }
@@ -65,6 +67,7 @@ class ChildCreateScreen extends HookConsumerWidget {
         final createdChild = await api.createChild(
           name: nameController.text.trim(),
           age: age,
+          gender: selectedGender.value!,
           interests: interestsController.text.trim(),
           fears: fearsController.text.trim(),
           character: characterController.text.trim(),
@@ -176,6 +179,19 @@ class ChildCreateScreen extends HookConsumerWidget {
                           }
                         },
                       ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: Text(
+                          'Для лучшего сходства лица ребенка в будущей книге нужно четкое отображение лица ребенка на фото',
+                          style: safeCopyWith(
+                            AppTypography.bodySmall,
+                            color: AppColors.onSurfaceVariant,
+                            fontSize: 11.0,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -200,6 +216,47 @@ class ChildCreateScreen extends HookConsumerWidget {
                   prefixIcon: Icons.cake,
                   keyboardType: TextInputType.number,
                   enabled: !isLoading.value,
+                ),
+                
+                const SizedBox(height: AppSpacing.md),
+                
+                // Выбор пола
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 8),
+                      child: Text(
+                        'Пол *',
+                        style: safeCopyWith(
+                          AppTypography.labelMedium,
+                          color: AppColors.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _GenderSelector(
+                            gender: ChildGender.male,
+                            selected: selectedGender.value,
+                            onSelected: (gender) => selectedGender.value = gender,
+                            enabled: !isLoading.value,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: _GenderSelector(
+                            gender: ChildGender.female,
+                            selected: selectedGender.value,
+                            onSelected: (gender) => selectedGender.value = gender,
+                            enabled: !isLoading.value,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
                 
                 const SizedBox(height: AppSpacing.md),
@@ -310,6 +367,68 @@ class ChildCreateScreen extends HookConsumerWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Виджет для выбора пола ребенка
+class _GenderSelector extends StatelessWidget {
+  final ChildGender gender;
+  final ChildGender? selected;
+  final Function(ChildGender) onSelected;
+  final bool enabled;
+
+  const _GenderSelector({
+    required this.gender,
+    required this.selected,
+    required this.onSelected,
+    required this.enabled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = selected == gender;
+    
+    return GestureDetector(
+      onTap: enabled ? () => onSelected(gender) : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withOpacity(0.2)
+              : AppColors.surfaceVariant.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primary
+                : AppColors.surfaceVariant,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              gender == ChildGender.male ? Icons.boy : Icons.girl,
+              color: isSelected
+                  ? AppColors.primary
+                  : AppColors.onSurfaceVariant,
+              size: 24,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              gender.displayName,
+              style: safeCopyWith(
+                AppTypography.labelLarge,
+                color: isSelected
+                    ? AppColors.primary
+                    : AppColors.onSurfaceVariant,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
         ),
       ),
     );

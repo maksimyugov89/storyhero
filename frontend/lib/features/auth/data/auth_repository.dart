@@ -171,7 +171,7 @@ class AuthRepository {
             // Это HTML, но statusCode < 500 - странный случай, используем общее сообщение
             errorMessage = 'Ошибка при обработке ответа сервера';
           } else {
-            errorMessage = responseData;
+          errorMessage = responseData;
           }
         }
         

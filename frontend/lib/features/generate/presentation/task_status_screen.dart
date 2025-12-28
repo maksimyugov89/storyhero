@@ -27,7 +27,7 @@ final taskStatusProvider = FutureProvider.family<TaskStatus, String>(
   (ref, taskId) async {
     final api = ref.watch(backendApiProvider);
     try {
-      return await api.checkTaskStatus(taskId);
+    return await api.checkTaskStatus(taskId);
     } on TaskNotFoundException catch (e) {
       // При 404 создаем TaskStatus со статусом 'lost'
       // Это позволит UI обработать ситуацию
@@ -180,6 +180,9 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
         _savedBookId = bookId;
         // Получаем child_id из книги для получения face_url и style
         _loadBookInfoForContinue(bookId);
+      } else {
+        // Если book_id не найден в задаче, пытаемся найти последнюю draft книгу
+        _tryFindLastDraftBook();
       }
       if (!_lockUnlocked) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -264,38 +267,54 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
     if (bookIdValue != null) {
       _savedBookId = bookIdValue;
     }
-    
-    // Переходим к книге сразу после получения book_id, даже если изображения еще не готовы
-    // Это позволяет показывать книгу с placeholder для изображений
+
+    // Переходим к книге ТОЛЬКО после завершения генерации текста И черновых изображений
+    // Пользователь должен оставаться на экране статуса до завершения draftImages
     if (bookIdValue != null && !_navigated) {
-      // Проверяем, можно ли переходить к книге
-      // Переходим если статус success/completed или если есть хотя бы текст (step >= text)
-      final canNavigate = bookIdValue != null &&
-                          (currentStatus == 'success' ||
-                           currentStatus == 'completed' ||
-                           currentStep == BookGenerationStep.done ||
-                           currentStep == BookGenerationStep.text ||
-                           currentStep == BookGenerationStep.prompts ||
-                           currentStep == BookGenerationStep.draftImages ||
-                           currentStep == BookGenerationStep.finalImages);
+      final progress = current.progress;
+      
+      // Проверяем, завершена ли генерация черновых изображений
+      // Переходим только если:
+      // 1. Этап генерации черновых изображений завершен (следующий этап или done)
+      // 2. ИЛИ все черновые изображения созданы (images_generated == total_images при stage = generating_draft_images)
+      // 3. ИЛИ статус completed/success
+      final isDraftImagesComplete = 
+          // Этап после draftImages (finalImages или done)
+          (currentStep == BookGenerationStep.finalImages || 
+           currentStep == BookGenerationStep.done) ||
+          // Или все черновые изображения созданы
+          (currentStep == BookGenerationStep.draftImages &&
+           progress?.imagesGenerated != null &&
+           progress?.totalImages != null &&
+           progress!.imagesGenerated! >= progress.totalImages!) ||
+          // Или задача полностью завершена
+          (currentStatus == 'success' || currentStatus == 'completed');
+      
+      final canNavigate = bookIdValue != null && isDraftImagesComplete;
       
       if (canNavigate) {
-      _stopPolling();
-      _navigated = true;
-      
-      final bookId = bookIdValue;
-      
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _stopPolling();
+        _navigated = true;
+        
+        final bookId = bookIdValue;
+        
+        WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_isDisposed || !mounted || bookId == null) return;
           _unlockGeneration();
           Future.delayed(const Duration(milliseconds: 800), () {
             if (!_isDisposed && mounted && bookId != null) {
-              context.go(RouteNames.bookView.replaceAll(':id', bookId));
+              // Переходим в черновые книги с фильтром и открываем конкретную книгу
+              context.go('${RouteNames.books}?filter=drafts');
+              Future.delayed(const Duration(milliseconds: 300), () {
+                if (!_isDisposed && mounted) {
+                  context.go(RouteNames.bookView.replaceAll(':id', bookId));
+                }
+              });
             }
           });
-      });
-      return;
-    }
+        });
+        return;
+      }
     }
   }
 
@@ -332,6 +351,42 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
       _savedChildId = book.childId;
     } catch (e) {
       print('[TaskStatusScreen] Ошибка загрузки информации о книге: $e');
+    }
+  }
+
+  /// Попытаться найти последнюю draft книгу для продолжения генерации
+  Future<void> _tryFindLastDraftBook() async {
+    try {
+      final api = ref.read(backendApiProvider);
+      final books = await api.getBooks();
+      
+      // Ищем последнюю draft книгу (сортируем по created_at, если доступно)
+      final draftBooks = books.where((book) => book.status == 'draft').toList();
+      
+      if (draftBooks.isNotEmpty) {
+        // Сортируем по дате создания (если доступно) или берем первую
+        draftBooks.sort((a, b) {
+          if (a.createdAt != null && b.createdAt != null) {
+            return b.createdAt!.compareTo(a.createdAt!); // Новые первыми
+          }
+          return 0;
+        });
+        
+        final lastDraftBook = draftBooks.first;
+        _savedBookId = lastDraftBook.id;
+        _savedChildId = lastDraftBook.childId;
+        
+        print('[TaskStatusScreen] Найдена последняя draft книга: ${lastDraftBook.id} (${lastDraftBook.title})');
+        
+        // Обновляем UI
+        if (mounted) {
+          setState(() {});
+        }
+      } else {
+        print('[TaskStatusScreen] Draft книги не найдены для продолжения генерации');
+      }
+    } catch (e) {
+      print('[TaskStatusScreen] Ошибка поиска draft книги: $e');
     }
   }
 
@@ -424,40 +479,51 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
     }
   }
 
-  double _getProgress(TaskStatus task) {
-    // Используем вычисленный прогресс из расширения (из current_step/total_steps)
-    final calculatedProgress = task.generationStatus.progress;
-    if (calculatedProgress != null && calculatedProgress >= 0 && calculatedProgress <= 100) {
-      return calculatedProgress / 100; // Конвертируем из процентов в 0-1
+  /// Получить прогресс генерации черновых изображений (0.0 - 1.0)
+  double _getDraftImagesProgress(TaskStatus task) {
+    final step = task.generationStatus.step;
+    final progress = task.progress;
+    
+    // Если мы на этапе генерации черновых изображений, используем реальный прогресс
+    if (step == BookGenerationStep.draftImages) {
+      if (progress?.imagesGenerated != null && progress?.totalImages != null) {
+        final imagesGenerated = progress!.imagesGenerated!;
+        final totalImages = progress.totalImages!;
+        if (totalImages > 0) {
+          return (imagesGenerated / totalImages).clamp(0.0, 1.0);
+        }
+      }
     }
     
-    // Fallback: используем этап генерации для приблизительного прогресса
-    final step = task.generationStatus.step;
-    switch (step) {
-      case BookGenerationStep.profile:
-        return 0.05;
-      case BookGenerationStep.plot:
-        return 0.1;
-      case BookGenerationStep.text:
-        return 0.2;
-      case BookGenerationStep.prompts:
-        return 0.35;
-      case BookGenerationStep.draftImages:
-        return 0.5;
-      case BookGenerationStep.finalImages:
-        return 0.8;
-      case BookGenerationStep.done:
-        return 1.0;
-      default:
-        return 0.1;
+    // Если этап уже пройден, возвращаем 1.0
+    if (step == BookGenerationStep.finalImages || step == BookGenerationStep.done) {
+      return 1.0;
     }
+    
+    // Если этап еще не начат, возвращаем 0.0
+    if (step != BookGenerationStep.draftImages) {
+      return 0.0;
+    }
+    
+    // Fallback: используем вычисленный прогресс из расширения
+    final calculatedProgress = task.generationStatus.progress;
+    if (calculatedProgress != null && calculatedProgress >= 0 && calculatedProgress <= 100) {
+      return (calculatedProgress / 100).clamp(0.0, 1.0);
+    }
+    
+    return 0.0;
+  }
+
+  double _getProgress(TaskStatus task) {
+    // Используем прогресс черновых изображений для отображения
+    return _getDraftImagesProgress(task);
   }
   
   String? _getDetailedProgressMessage(TaskStatus task) {
     final step = task.generationStatus.step;
     
     // Используем информацию о прогрессе изображений из TaskProgress
-    if (step == BookGenerationStep.draftImages || step == BookGenerationStep.finalImages) {
+      if (step == BookGenerationStep.draftImages || step == BookGenerationStep.finalImages) {
       final progress = task.progress;
       if (progress?.imagesGenerated != null && progress?.totalImages != null) {
         final imagesGenerated = progress!.imagesGenerated!;
@@ -748,7 +814,9 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          'Генерация была прервана при перезапуске сервера. Книга готова для продолжения генерации финальных изображений.',
+                          _savedBookId != null
+                              ? 'Генерация была прервана при перезапуске сервера. Книга готова для продолжения генерации финальных изображений.'
+                              : 'Генерация была прервана при перезапуске сервера. Попробуйте найти вашу книгу в списке черновиков и продолжить генерацию оттуда.',
                           style: safeCopyWith(
                             AppTypography.bodyMedium,
                             color: AppColors.onBackground,
@@ -855,13 +923,23 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
               String displayMessage;
               
               if (errorMessage != null && errorMessage.isNotEmpty) {
-                // Парсим сообщение об ошибке для 502/Pollinations.ai
+                // Парсим сообщение об ошибке для более понятного отображения
                 if (errorMessage.contains('502') || 
                     errorMessage.contains('Pollinations.ai') ||
                     errorMessage.toLowerCase().contains('pollinations')) {
                   displayMessage = 'Сервис генерации изображений временно недоступен. Попробуйте позже.';
+                } else if (errorMessage.contains('cannot import') || 
+                          errorMessage.contains('ImportError') ||
+                          errorMessage.contains('ModuleNotFoundError')) {
+                  displayMessage = 'Ошибка на сервере. Пожалуйста, сообщите разработчикам об этой проблеме.';
+                } else if (errorMessage.contains('subscription') || 
+                          errorMessage.contains('check_and_update_user_subscription_status')) {
+                  displayMessage = 'Ошибка проверки подписки. Пожалуйста, попробуйте позже или обратитесь в поддержку.';
                 } else {
-                  displayMessage = errorMessage;
+                  // Для других ошибок показываем оригинальное сообщение, но обрезаем технические детали
+                  displayMessage = errorMessage.length > 200 
+                    ? '${errorMessage.substring(0, 200)}...' 
+                    : errorMessage;
                 }
               } else {
                 displayMessage = 'Произошла ошибка при генерации книги. Пожалуйста, попробуйте ещё раз.';
@@ -962,115 +1040,221 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  const SizedBox(height: AppSpacing.md),
+                  
+                  // Магическая Lottie анимация (опущена ниже)
+                  SizedBox(
+                    width: 180,
+                    height: 180,
+                    child: Lottie.asset(
+                      'assets/animations/login_magic_swirl.json',
+                      fit: BoxFit.contain,
+                      repeat: true,
+                    ),
+                  ),
+                  
+                  const SizedBox(height: AppSpacing.sm),
+                  
+                  // Процент готовности с белым градиентом для лучшей читаемости
+                  ShaderMask(
+                    shaderCallback: (bounds) => LinearGradient(
+                      colors: [
+                        Colors.white,
+                        Colors.white.withOpacity(0.95),
+                        AppColors.accent.withOpacity(0.5),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ).createShader(bounds),
+                    child: Text(
+                      '${(progress * 100).toStringAsFixed(0)}%',
+                      style: safeCopyWith(
+                        AppTypography.headlineLarge,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 52.0,
+                        letterSpacing: 1.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  
+                  const SizedBox(height: AppSpacing.xs),
+                  
+                  // Текст "Генерация черновых изображений" с белым градиентом
+                  ShaderMask(
+                    shaderCallback: (bounds) => LinearGradient(
+                      colors: [
+                        Colors.white,
+                        Colors.white.withOpacity(0.95),
+                        AppColors.primary.withOpacity(0.5),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ).createShader(bounds),
+                    child: Text(
+                      'Генерация черновых изображений',
+                      style: safeCopyWith(
+                        AppTypography.labelLarge,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 17.0,
+                        letterSpacing: 1.0,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  
                   const SizedBox(height: AppSpacing.lg),
                   
-                  // Магическая Lottie анимация с процентами
-                  Stack(
-                    alignment: Alignment.center,
+                  // Заголовок с градиентом и иконками звезд
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Lottie анимация на фоне
-                      SizedBox(
-                        width: 200,
-                        height: 200,
-                        child: Lottie.asset(
-                          'assets/animations/login_magic_swirl.json',
-                          fit: BoxFit.contain,
-                          repeat: true,
+                      AssetIcon(
+                        assetPath: AppIcons.magicStar,
+                        size: 20,
+                        color: AppColors.accent,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Flexible(
+                        child: ShaderMask(
+                          shaderCallback: (bounds) => LinearGradient(
+                            colors: [
+                              Colors.white,
+                              Colors.white.withOpacity(0.95),
+                              AppColors.accent.withOpacity(0.5),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ).createShader(bounds),
+                          child: Text(
+                            'Ваша книга создаётся',
+                            style: safeCopyWith(
+                              AppTypography.headlineSmall,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 22.0,
+                              letterSpacing: 0.5,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
                       ),
-                      // Процент в центре анимации
-                      Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              AppColors.primary.withOpacity(0.3),
-                              AppColors.primary.withOpacity(0.1),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${(progress * 100).toStringAsFixed(0)}%',
-                                style: safeCopyWith(
-                                  AppTypography.headlineLarge,
-                                  color: AppColors.onBackground,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 32.0,
-                                ),
-                              ),
-                              Text(
-                                'готово',
-                                style: safeCopyWith(
-                                  AppTypography.bodySmall,
-                                  color: AppColors.onSurfaceVariant,
-                                  fontSize: 12.0,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      const SizedBox(width: AppSpacing.xs),
+                      AssetIcon(
+                        assetPath: AppIcons.magicStar,
+                        size: 20,
+                        color: AppColors.accent,
                       ),
                     ],
                   ),
                   
-                  const SizedBox(height: AppSpacing.lg),
-                  
-                  Text(
-                    'Создание вашей книги',
-                    style: AppTypography.headlineMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  
                   const SizedBox(height: AppSpacing.md),
                   
-                  // Текущий этап с деталями
+                  // Текущий этап с деталями и градиентом
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          AppColors.primary.withOpacity(0.2),
-                          AppColors.secondary.withOpacity(0.2),
+                          AppColors.primary.withOpacity(0.25),
+                          AppColors.secondary.withOpacity(0.25),
+                          AppColors.tertiary.withOpacity(0.25),
                         ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: AppColors.primary.withOpacity(0.3),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withOpacity(0.2),
+                          blurRadius: 12,
+                          spreadRadius: 2,
+                        ),
+                      ],
                     ),
-                    child: Text(
-                      task.generationStatus.step.displayName,
-                      style: safeCopyWith(
-                        AppTypography.bodyLarge,
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
+                    child: ShaderMask(
+                      shaderCallback: (bounds) => LinearGradient(
+                        colors: [
+                          Colors.white,
+                          Colors.white.withOpacity(0.95),
+                          AppColors.primary.withOpacity(0.5),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ).createShader(bounds),
+                      child: Text(
+                        task.generationStatus.step.displayName,
+                        style: safeCopyWith(
+                          AppTypography.bodyLarge,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18.0,
+                          letterSpacing: 0.5,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
                     ),
                   ),
                   
                   if (_getDetailedProgressMessage(task) != null) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      _getDetailedProgressMessage(task)!,
-                      style: safeCopyWith(
-                        AppTypography.bodyMedium,
-                        color: AppColors.onSurfaceVariant,
+                    const SizedBox(height: AppSpacing.md),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceVariant.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      textAlign: TextAlign.center,
+                      child: Text(
+                        _getDetailedProgressMessage(task)!,
+                        style: safeCopyWith(
+                          AppTypography.bodyMedium,
+                          color: AppColors.onSurface,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ],
                   
                   const SizedBox(height: AppSpacing.xl),
                   
-                  // Прогресс-бар
-                  AppProgressBar(
-                    progress: progress,
-                    label: 'Генерация изображений: ${(progress * 100).toStringAsFixed(0)}%',
+                  // Прогресс-бар с улучшенным текстом
+                  Column(
+                    children: [
+                      ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          colors: [
+                            Colors.white,
+                            Colors.white.withOpacity(0.95),
+                            AppColors.primary.withOpacity(0.5),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ).createShader(bounds),
+                        child: Text(
+                          'Генерация изображений: ${(progress * 100).toStringAsFixed(0)}%',
+                          style: safeCopyWith(
+                            AppTypography.bodyLarge,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 17.0,
+                            letterSpacing: 0.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      AppProgressBar(
+                        progress: progress,
+                        label: '',
+                      ),
+                    ],
                   ),
                   
                   const SizedBox(height: AppSpacing.xl),

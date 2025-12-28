@@ -10,6 +10,9 @@ _$ChildImpl _$$ChildImplFromJson(Map<String, dynamic> json) => _$ChildImpl(
   id: _idToString(json['id']),
   name: json['name'] as String,
   age: (json['age'] as num).toInt(),
+  gender: json['gender'] == null
+      ? ChildGender.female
+      : _genderFromJson(json['gender']),
   interests: json['interests'] as String,
   fears: json['fears'] as String,
   character: json['character'] as String,
@@ -23,6 +26,7 @@ Map<String, dynamic> _$$ChildImplToJson(_$ChildImpl instance) =>
       'id': instance.id,
       'name': instance.name,
       'age': instance.age,
+      'gender': _$ChildGenderEnumMap[instance.gender]!,
       'interests': instance.interests,
       'fears': instance.fears,
       'character': instance.character,
@@ -30,3 +34,8 @@ Map<String, dynamic> _$$ChildImplToJson(_$ChildImpl instance) =>
       'face_url': instance.faceUrl,
       'photos': instance.photos,
     };
+
+const _$ChildGenderEnumMap = {
+  ChildGender.male: 'male',
+  ChildGender.female: 'female',
+};

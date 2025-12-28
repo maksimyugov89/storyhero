@@ -35,6 +35,36 @@ class BookCompleteScreen extends HookConsumerWidget {
     final isProcessingPayment = useState(false);
     final isDownloading = useState(false);
     final paymentError = useState<String?>(null);
+    final paymentCheckTimer = useState<Timer?>(null);
+    final actualIsPaid = useState<bool?>(null); // Локальное состояние для статуса оплаты
+    
+    // Функция для однократной проверки статуса оплаты
+    Future<void> checkPaymentStatusOnce(WidgetRef ref) async {
+      try {
+        final api = ref.read(backendApiProvider);
+        final paidStatus = await api.checkPaymentStatus(bookId);
+        actualIsPaid.value = paidStatus;
+      } catch (e) {
+        print('[BookCompleteScreen] Ошибка проверки статуса оплаты при загрузке: $e');
+        actualIsPaid.value = false;
+      }
+    }
+    
+    // Проверяем статус оплаты при загрузке экрана
+    useEffect(() {
+      if (actualIsPaid.value == null) {
+        checkPaymentStatusOnce(ref);
+      }
+      return null;
+    }, []);
+    
+    // Очищаем таймер при размонтировании виджета
+    useEffect(() {
+      return () {
+        paymentCheckTimer.value?.cancel();
+        paymentCheckTimer.value = null;
+      };
+    }, []);
 
     return AppPage(
       backgroundImage: 'assets/logo/storyhero_bg_final_story.png',
@@ -60,8 +90,16 @@ class BookCompleteScreen extends HookConsumerWidget {
         ),
         body: bookAsync.when(
           data: (book) {
-            final isPaid = book.isPaid;
+            // Используем book.isPaid из ответа бэкенда (теперь он должен приходить)
+            // actualIsPaid используется только как fallback при первой загрузке, пока проверяется
+            final isPaid = actualIsPaid.value ?? book.isPaid;
             final pdfUrl = book.finalPdfUrl;
+            
+            // Отладочное логирование
+            print('[BookCompleteScreen] isPaid from book.isPaid: ${book.isPaid}');
+            print('[BookCompleteScreen] isPaid from actualIsPaid: ${actualIsPaid.value}');
+            print('[BookCompleteScreen] final isPaid: $isPaid');
+            print('[BookCompleteScreen] pdfUrl: $pdfUrl');
 
             return SingleChildScrollView(
               padding: AppSpacing.paddingMD,
@@ -75,7 +113,7 @@ class BookCompleteScreen extends HookConsumerWidget {
                   const SizedBox(height: AppSpacing.xl),
 
                   // Превью книги
-                  _buildBookPreview(context, book.title, book.coverUrl),
+                  _buildBookPreview(context, ref, book.title, book.coverUrl, book.id),
 
                   const SizedBox(height: AppSpacing.xl),
 
@@ -100,26 +138,87 @@ class BookCompleteScreen extends HookConsumerWidget {
                           final uri = Uri.parse(paymentUrl);
                           if (await canLaunchUrl(uri)) {
                             await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            
+                            // После открытия платежной страницы запускаем проверку статуса оплаты
+                            _startPaymentStatusCheck(context, ref, paymentCheckTimer, bookId, actualIsPaid);
+                            
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Row(
+                                    children: [
+                                      Icon(Icons.info_outline, color: Colors.white),
+                                      SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text('После оплаты статус обновится автоматически'),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor: Colors.blue,
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
+                            }
                           }
                         } else {
                           // Демо-режим: имитируем успешную оплату
                           await Future.delayed(const Duration(seconds: 2));
-                          await api.confirmPayment(bookId);
-                          ref.invalidate(bookProvider(bookId));
-
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Row(
-                                  children: [
-                                    const Icon(Icons.check_circle, color: Colors.white),
-                                    const SizedBox(width: 8),
-                                    const Expanded(child: Text('Оплата успешно подтверждена!')),
-                                  ],
-                                ),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
+                          final confirmed = await api.confirmPayment(bookId);
+                          
+                          if (confirmed) {
+                            // Обновляем данные книги - используем refresh для немедленного обновления
+                            ref.refresh(bookProvider(bookId));
+                            
+                            // Ждем обновления данных
+                            await Future.delayed(const Duration(milliseconds: 500));
+                            final updatedBook = await ref.read(bookProvider(bookId).future);
+                            
+                            // Обновляем локальное состояние из обновленной книги (теперь бэкенд возвращает is_paid)
+                            actualIsPaid.value = updatedBook.isPaid;
+                            
+                            print('[BookCompleteScreen] После подтверждения оплаты:');
+                            print('[BookCompleteScreen] updatedBook.isPaid: ${updatedBook.isPaid}');
+                            print('[BookCompleteScreen] updatedBook.finalPdfUrl: ${updatedBook.finalPdfUrl}');
+                            
+                            if (context.mounted) {
+                              if (updatedBook.isPaid && updatedBook.finalPdfUrl != null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Row(
+                                      children: [
+                                        Icon(Icons.check_circle, color: Colors.white),
+                                        SizedBox(width: 8),
+                                        Expanded(child: Text('Оплата успешно подтверждена! PDF доступен для скачивания.')),
+                                      ],
+                                    ),
+                                    backgroundColor: Colors.green,
+                                    duration: Duration(seconds: 3),
+                                  ),
+                                );
+                              } else if (updatedBook.isPaid && updatedBook.finalPdfUrl == null) {
+                                // Оплата подтверждена, но PDF еще не готов
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Row(
+                                      children: [
+                                        Icon(Icons.info_outline, color: Colors.white),
+                                        SizedBox(width: 8),
+                                        Expanded(child: Text('Оплата подтверждена. PDF будет доступен через несколько секунд.')),
+                                      ],
+                                    ),
+                                    backgroundColor: Colors.blue,
+                                    duration: Duration(seconds: 3),
+                                  ),
+                                );
+                              } else {
+                                // Если статус не обновился, запускаем проверку
+                                _startPaymentStatusCheck(context, ref, paymentCheckTimer, bookId, actualIsPaid);
+                              }
+                            }
+                          } else {
+                            if (context.mounted) {
+                              paymentError.value = 'Не удалось подтвердить оплату. Попробуйте позже.';
+                            }
                           }
                         }
                       } catch (e) {
@@ -132,19 +231,99 @@ class BookCompleteScreen extends HookConsumerWidget {
 
                   const SizedBox(height: AppSpacing.lg),
 
-                  // Кнопка скачивания PDF
+                  // Кнопка скачивания PDF (показывается всегда, активна только если оплачено)
                   _buildDownloadSection(
                     context,
+                    ref,
                     isPaid: isPaid,
                     pdfUrl: pdfUrl,
                     isDownloading: isDownloading.value,
                     onDownloadPressed: () async {
-                      if (!isPaid || pdfUrl == null) return;
+                      // Используем actualIsPaid для определения статуса оплаты
+                      final currentIsPaid = actualIsPaid.value ?? false;
+                      
+                      // Получаем актуальные данные книги для pdfUrl
+                      final currentBook = await ref.read(bookProvider(bookId).future);
+                      final currentPdfUrl = currentBook.finalPdfUrl;
+                      
+                      if (!currentIsPaid || currentPdfUrl == null) {
+                        // Если еще не оплачено, пытаемся проверить статус
+                        if (!currentIsPaid) {
+                          isDownloading.value = true;
+                          try {
+                            final api = ref.read(backendApiProvider);
+                            final paidStatus = await api.checkPaymentStatus(bookId);
+                            actualIsPaid.value = paidStatus; // Обновляем локальное состояние
+                            
+                            if (paidStatus) {
+                              // Обновляем данные книги
+                              ref.refresh(bookProvider(bookId));
+                              await Future.delayed(const Duration(milliseconds: 500));
+                              final updatedBook = await ref.read(bookProvider(bookId).future);
+                              if (updatedBook.finalPdfUrl != null) {
+                                // Теперь можно скачать
+                                final uri = Uri.parse(updatedBook.finalPdfUrl!);
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Начинаем загрузку PDF...'),
+                                        backgroundColor: Colors.blue,
+                                      ),
+                                    );
+                                  }
+                                }
+                              } else {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('PDF пока не готов. Попробуйте через минуту.'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                }
+                              }
+                            } else {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Книга не оплачена. Пожалуйста, оплатите сначала.'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Ошибка проверки оплаты: ${e.toString().replaceAll('Exception: ', '')}'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          } finally {
+                            isDownloading.value = false;
+                          }
+                        } else {
+                          // currentIsPaid == true, но currentPdfUrl == null
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('PDF файл еще не готов. Пожалуйста, попробуйте позже.'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          }
+                        }
+                        return;
+                      }
 
                       isDownloading.value = true;
 
                       try {
-                        final uri = Uri.parse(pdfUrl);
+                        final uri = Uri.parse(currentPdfUrl);
                         if (await canLaunchUrl(uri)) {
                           await launchUrl(uri, mode: LaunchMode.externalApplication);
                         } else {
@@ -242,7 +421,7 @@ class BookCompleteScreen extends HookConsumerWidget {
     );
   }
 
-  Widget _buildBookPreview(BuildContext context, String title, String? coverUrl) {
+  Widget _buildBookPreview(BuildContext context, WidgetRef ref, String title, String? coverUrl, String bookId) {
     return AppMagicCard(
       padding: AppSpacing.paddingLG,
       child: Column(
@@ -263,32 +442,10 @@ class BookCompleteScreen extends HookConsumerWidget {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: coverUrl != null
-                  ? RoundedImage(
-                      imageUrl: coverUrl,
-                      width: 160,
-                      height: 220,
-                      radius: 12,
-                    )
-                  : Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.primary,
-                            AppColors.secondary,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                      child: Center(
-                        child: AssetIcon(
-                          assetPath: AppIcons.library,
-                          size: 64,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
+              child: _CompleteBookCoverImage(
+                coverUrl: coverUrl,
+                bookId: bookId,
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -490,7 +647,8 @@ class BookCompleteScreen extends HookConsumerWidget {
   }
 
   Widget _buildDownloadSection(
-    BuildContext context, {
+    BuildContext context,
+    WidgetRef ref, {
     required bool isPaid,
     required String? pdfUrl,
     required bool isDownloading,
@@ -535,7 +693,9 @@ class BookCompleteScreen extends HookConsumerWidget {
                     Text(
                       canDownload
                           ? 'Высокое качество, готов к печати'
-                          : 'Доступно после оплаты',
+                          : isPaid
+                              ? 'PDF готовится, попробуйте позже'
+                              : 'Доступно после оплаты',
                       style: safeCopyWith(
                         AppTypography.bodySmall,
                         color: AppColors.onSurfaceVariant,
@@ -549,50 +709,56 @@ class BookCompleteScreen extends HookConsumerWidget {
 
           const SizedBox(height: AppSpacing.lg),
 
-          // Кнопка скачивания
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: canDownload && !isDownloading ? onDownloadPressed : null,
-              icon: isDownloading
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Icon(
-                      canDownload ? Icons.download : Icons.lock,
-                      color: canDownload ? Colors.white : AppColors.onSurfaceVariant,
+          // Кнопка скачивания PDF
+          AppMagicButton(
+            onPressed: canDownload && !isDownloading ? onDownloadPressed : null,
+            isLoading: isDownloading,
+            fullWidth: true,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  canDownload ? Icons.download : Icons.lock,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    isDownloading
+                        ? 'Скачивание...'
+                        : canDownload
+                            ? 'Скачать PDF'
+                            : isPaid
+                                ? 'PDF готовится'
+                                : 'Оплатить для скачивания',
+                    style: safeCopyWith(
+                      AppTypography.labelLarge,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
                     ),
-              label: Text(
-                isDownloading
-                    ? 'Скачивание...'
-                    : canDownload
-                        ? '📥 Скачать PDF'
-                        : '🔒 Оплатите для скачивания',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: canDownload ? Colors.white : AppColors.onSurfaceVariant,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
                 ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: canDownload ? Colors.green : AppColors.surfaceVariant,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              ],
             ),
           ),
 
-          if (!canDownload) ...[
+          if (!isPaid) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
               '↑ Сначала оплатите книгу выше',
+              style: safeCopyWith(
+                AppTypography.bodySmall,
+                color: AppColors.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ] else if (!canDownload) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'PDF файл готовится, попробуйте через минуту',
               style: safeCopyWith(
                 AppTypography.bodySmall,
                 color: AppColors.onSurfaceVariant,
@@ -680,29 +846,26 @@ class BookCompleteScreen extends HookConsumerWidget {
 
           const SizedBox(height: AppSpacing.lg),
 
-          // Кнопка заказа
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                context.push(RouteNames.bookOrder.replaceAll(':id', bookId));
-              },
-              icon: const Icon(Icons.shopping_cart, color: Colors.white),
-              label: const Text(
-                '📦 Заказать печатную книгу',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+          // Кнопка заказа печатной книги
+          AppMagicButton(
+            onPressed: () {
+              context.push(RouteNames.bookOrder.replaceAll(':id', bookId));
+            },
+            fullWidth: true,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.shopping_cart, color: Colors.white),
+                const SizedBox(width: 8),
+                Text(
+                  '📦 Заказать печатную книгу',
+                  style: safeCopyWith(
+                    AppTypography.labelLarge,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange.shade600,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              ],
             ),
           ),
 
@@ -738,5 +901,239 @@ class BookCompleteScreen extends HookConsumerWidget {
       ],
     );
   }
+}
+
+/// Виджет для отображения обложки книги на экране завершения
+/// Использует coverUrl, если он есть, иначе пытается получить первое изображение из сцен
+class _CompleteBookCoverImage extends ConsumerWidget {
+  final String? coverUrl;
+  final String bookId;
+
+  const _CompleteBookCoverImage({
+    required this.coverUrl,
+    required this.bookId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Если есть coverUrl, используем его
+    if (coverUrl != null && coverUrl!.isNotEmpty) {
+      return RoundedImage(
+        imageUrl: coverUrl,
+        width: 160,
+        height: 220,
+        radius: 12,
+      );
+    }
+
+    // Если coverUrl отсутствует, пытаемся получить первое изображение из сцен
+    final scenesAsync = ref.watch(bookScenesProvider(bookId));
+
+    return scenesAsync.when(
+      data: (scenes) {
+        if (scenes.isEmpty) {
+          // Нет сцен - показываем placeholder
+          return Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary,
+                  AppColors.secondary,
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Center(
+              child: AssetIcon(
+                assetPath: AppIcons.library,
+                size: 64,
+                color: Colors.white,
+              ),
+            ),
+          );
+        }
+
+        // Сортируем сцены по order и берем первую
+        final sortedScenes = [...scenes]..sort((a, b) => a.order.compareTo(b.order));
+        final firstScene = sortedScenes.first;
+
+        // Используем finalUrl (готовое изображение) или draftUrl (черновик)
+        final imageUrl = firstScene.finalUrl ?? firstScene.draftUrl;
+
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          return RoundedImage(
+            imageUrl: imageUrl,
+            width: 160,
+            height: 220,
+            radius: 12,
+          );
+        }
+
+        // Если изображение отсутствует, показываем placeholder
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.primary,
+                AppColors.secondary,
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Center(
+            child: AssetIcon(
+              assetPath: AppIcons.library,
+              size: 64,
+              color: Colors.white,
+            ),
+          ),
+        );
+      },
+      loading: () => Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primary,
+              AppColors.secondary,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: AssetIcon(
+            assetPath: AppIcons.library,
+            size: 64,
+            color: Colors.white,
+          ),
+        ),
+      ),
+      error: (_, __) => Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primary,
+              AppColors.secondary,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: AssetIcon(
+            assetPath: AppIcons.library,
+            size: 64,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Запускает периодическую проверку статуса оплаты
+void _startPaymentStatusCheck(
+  BuildContext context,
+  WidgetRef ref,
+  ValueNotifier<Timer?> timerNotifier,
+  String bookId,
+  ValueNotifier<bool?> actualIsPaid,
+) {
+    // Останавливаем предыдущий таймер, если он есть
+    timerNotifier.value?.cancel();
+    
+    int attempts = 0;
+    const maxAttempts = 30; // Проверяем 30 раз (5 минут при интервале 10 секунд)
+    
+    timerNotifier.value = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      attempts++;
+      
+      try {
+        final api = ref.read(backendApiProvider);
+        final isPaid = await api.checkPaymentStatus(bookId);
+        
+        if (isPaid) {
+          // Оплата подтверждена, обновляем локальное состояние
+          actualIsPaid.value = true;
+          
+          // Оплата подтверждена, обновляем данные книги
+          timer.cancel();
+          timerNotifier.value = null;
+          
+          // Обновляем данные книги - используем refresh для немедленного обновления
+          ref.refresh(bookProvider(bookId));
+          
+          // Ждем обновления данных
+          await Future.delayed(const Duration(milliseconds: 500));
+          
+          // Проверяем, что книга обновилась
+          final updatedBook = await ref.read(bookProvider(bookId).future);
+          
+          if (context.mounted) {
+            if (updatedBook.finalPdfUrl != null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.white),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text('Оплата подтверждена! PDF доступен для скачивания.'),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            } else {
+              // Если PDF еще не готов, показываем сообщение
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.white),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text('Оплата подтверждена. PDF будет доступен через несколько секунд.'),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: Colors.blue,
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+          }
+        } else if (attempts >= maxAttempts) {
+          // Превышено максимальное количество попыток
+          timer.cancel();
+          timerNotifier.value = null;
+          
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.warning, color: Colors.white),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Проверка оплаты завершена. Обновите страницу вручную.'),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        print('[BookCompleteScreen] Ошибка проверки статуса оплаты: $e');
+        // Продолжаем проверку при ошибке
+      }
+    });
 }
 

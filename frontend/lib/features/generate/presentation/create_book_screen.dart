@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/api/backend_api.dart';
 import '../../../../core/models/child.dart';
 import '../../../../core/models/book_style.dart';
+import '../../../../core/models/task_status.dart';
 import '../../../../core/presentation/layouts/app_page.dart';
 import '../../../../core/presentation/design_system/app_colors.dart';
 import '../../../../core/presentation/design_system/app_typography.dart';
@@ -94,7 +95,11 @@ class CreateBookScreen extends HookConsumerWidget {
           );
 
           if (context.mounted) {
-            // Navigate after async operation completes
+            isLoading.value = false;
+            
+            // Всегда переходим на экран статуса задачи
+            // Пользователь будет оставаться там до завершения генерации текста и черновых изображений
+            // После этого автоматически перейдет в черновые книги
             Future.microtask(() {
               if (context.mounted) {
                 context.go(RouteNames.taskStatus.replaceAll(':id', response.taskId));

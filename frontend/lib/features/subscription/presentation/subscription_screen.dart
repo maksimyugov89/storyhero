@@ -39,7 +39,9 @@ class SubscriptionScreen extends HookConsumerWidget {
                 children: [
                   Icon(Icons.check_circle, color: Colors.green, size: 28),
                   const SizedBox(width: 8),
-                  const Text('Подписка оформлена!'),
+                  const Expanded(
+                    child: Text('Подписка оформлена!'),
+                  ),
                 ],
               ),
               content: Column(
@@ -287,8 +289,8 @@ class SubscriptionScreen extends HookConsumerWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    b['text'] as String,
-                    style: AppTypography.bodyMedium,
+                  b['text'] as String,
+                  style: AppTypography.bodyMedium,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -395,9 +397,9 @@ class SubscriptionScreen extends HookConsumerWidget {
         Text(
           'Премиум стили',
           style: safeCopyWith(
-            AppTypography.headlineSmall,
+            AppTypography.headlineMedium,
             fontWeight: FontWeight.bold,
-            color: AppColors.onBackground,
+            color: Colors.white,
           ),
         ),
         const SizedBox(height: AppSpacing.md),
@@ -427,9 +429,9 @@ class SubscriptionScreen extends HookConsumerWidget {
                   ),
                 Flexible(
                   child: Text(
-                    style.name,
-                    style: safeCopyWith(
-                      AppTypography.labelSmall,
+                  style.name,
+                  style: safeCopyWith(
+                    AppTypography.labelSmall,
                       color: isSubscribed 
                           ? AppColors.primary 
                           : Colors.white.withOpacity(0.9),
@@ -445,16 +447,145 @@ class SubscriptionScreen extends HookConsumerWidget {
         ),
         if (premiumStyles.length > 10) ...[
           const SizedBox(height: AppSpacing.sm),
-          Text(
-            'и ещё ${premiumStyles.length - 10} стилей...',
-            style: safeCopyWith(
-              AppTypography.bodySmall,
-              color: AppColors.onBackground.withOpacity(0.9),
-              fontWeight: FontWeight.w500,
+          InkWell(
+            onTap: () => _showAllStylesDialog(context, isSubscribed),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.3),
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'и ещё ${premiumStyles.length - 10} стилей...',
+                    style: safeCopyWith(
+                      AppTypography.bodyMedium,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: AppColors.primary,
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ],
+    );
+  }
+
+  void _showAllStylesDialog(BuildContext context, bool isSubscribed) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.palette, color: AppColors.primary, size: 28),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Все премиум стили',
+                style: safeCopyWith(
+                  AppTypography.headlineSmall,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Доступно ${premiumStyles.length} премиум стилей:',
+                style: safeCopyWith(
+                  AppTypography.bodyMedium,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: premiumStyles.map((style) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSubscribed
+                        ? AppColors.primary.withOpacity(0.1)
+                        : AppColors.surfaceVariant.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isSubscribed
+                          ? AppColors.primary.withOpacity(0.3)
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!isSubscribed)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(Icons.lock, size: 14, color: AppColors.onSurfaceVariant),
+                        ),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              style.name,
+                              style: safeCopyWith(
+                                AppTypography.labelMedium,
+                                color: isSubscribed 
+                                    ? AppColors.primary 
+                                    : AppColors.onBackground,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (style.description.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                style.description,
+                                style: safeCopyWith(
+                                  AppTypography.bodySmall,
+                                  color: AppColors.onSurfaceVariant,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                )).toList(),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Закрыть'),
+          ),
+        ],
+      ),
     );
   }
 

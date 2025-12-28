@@ -16,6 +16,9 @@ import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../core/widgets/error_widget.dart';
 import '../../../core/widgets/loading_widget.dart';
 import '../../../core/widgets/rounded_image.dart';
+import '../../../core/widgets/phone_input_field.dart';
+import '../../../core/widgets/address_input_fields.dart';
+import '../../../core/utils/phone_formatter.dart';
 import '../../../ui/components/asset_icon.dart';
 import '../data/book_providers.dart';
 
@@ -97,6 +100,7 @@ class BookOrderScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bookAsync = ref.watch(bookProvider(bookId));
+    final scenesAsync = ref.watch(bookScenesProvider(bookId));
     
     // Состояние выбора
     final selectedSize = useState<BookSize>(BookSize.a5);
@@ -107,7 +111,12 @@ class BookOrderScreen extends HookConsumerWidget {
     // Данные доставки
     final nameController = useTextEditingController();
     final phoneController = useTextEditingController();
-    final addressController = useTextEditingController();
+    // Поля адреса
+    final cityController = useTextEditingController();
+    final streetController = useTextEditingController();
+    final houseController = useTextEditingController();
+    final apartmentController = useTextEditingController();
+    final postalCodeController = useTextEditingController();
     final commentController = useTextEditingController();
     
     final isProcessing = useState(false);
@@ -142,13 +151,26 @@ class BookOrderScreen extends HookConsumerWidget {
         ),
         body: bookAsync.when(
           data: (book) {
+            // Получаем обложку: сначала из book.coverUrl, если нет - из первой сцены
+            String? coverUrl = book.coverUrl;
+            if ((coverUrl == null || coverUrl.isEmpty)) {
+              final scenes = scenesAsync.valueOrNull;
+              if (scenes != null && scenes.isNotEmpty) {
+                final firstScene = scenes.firstWhere(
+                  (s) => s.order == 0,
+                  orElse: () => scenes.first,
+                );
+                coverUrl = firstScene.finalUrl ?? firstScene.draftUrl;
+              }
+            }
+            
             return Form(
               key: formKey,
               child: ListView(
                 padding: AppSpacing.paddingMD,
                 children: [
                   // Заголовок
-                  _buildHeader(context, book.title, book.coverUrl),
+                  _buildHeader(context, book.title, coverUrl),
                   
                   const SizedBox(height: AppSpacing.xl),
                   
@@ -177,7 +199,11 @@ class BookOrderScreen extends HookConsumerWidget {
                     context,
                     nameController,
                     phoneController,
-                    addressController,
+                    cityController,
+                    streetController,
+                    houseController,
+                    apartmentController,
+                    postalCodeController,
                     commentController,
                   ),
                   
@@ -234,7 +260,79 @@ class BookOrderScreen extends HookConsumerWidget {
                             try {
                               final api = ref.read(backendApiProvider);
                               
-                              // Создаём заказ
+                              // ШАГ 1: Сначала создаём платёж для заказа на печать
+                              final totalPrice = calculateTotal();
+                              
+                              // Формируем адрес из отдельных полей
+                              final addressParts = <String>[];
+                              if (cityController.text.trim().isNotEmpty) {
+                                addressParts.add(cityController.text.trim());
+                              }
+                              if (streetController.text.trim().isNotEmpty) {
+                                addressParts.add(streetController.text.trim());
+                              }
+                              if (houseController.text.trim().isNotEmpty) {
+                                addressParts.add(houseController.text.trim());
+                              }
+                              if (apartmentController.text.trim().isNotEmpty) {
+                                addressParts.add('кв. ${apartmentController.text.trim()}');
+                              }
+                              if (postalCodeController.text.trim().isNotEmpty) {
+                                addressParts.add(postalCodeController.text.trim());
+                              }
+                              final fullAddress = addressParts.join(', ');
+                              
+                              // Извлекаем только цифры из телефона
+                              final phoneDigits = PhoneInputFormatter.extractDigits(phoneController.text);
+                              
+                              final orderData = {
+                                'book_title': book.title,
+                                'size': selectedSize.value.name,
+                                'pages': selectedPages.value.count,
+                                'binding': selectedBinding.value.name,
+                                'packaging': selectedPackaging.value.name,
+                                'total_price': totalPrice, // Добавляем total_price в order_data
+                                'customer_name': nameController.text.trim(),
+                                'customer_phone': phoneDigits.isNotEmpty ? phoneDigits : phoneController.text.trim(),
+                                'customer_address': fullAddress,
+                                'comment': commentController.text.trim(),
+                              };
+                              final paymentUrl = await api.createPaymentForPrintOrder(
+                                bookId: bookId,
+                                amount: totalPrice,
+                                orderData: orderData,
+                              );
+                              
+                              // ШАГ 2: Если есть URL для оплаты, открываем его
+                              if (paymentUrl != null && paymentUrl.isNotEmpty) {
+                                final uri = Uri.parse(paymentUrl);
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                  // После оплаты бэкенд должен отправить уведомления
+                                  // и создать заказ автоматически через webhook
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Переход к оплате... После оплаты заказ будет оформлен автоматически.'),
+                                        backgroundColor: Colors.blue,
+                                      ),
+                                    );
+                                    context.pop();
+                                    return;
+                                  }
+                                }
+                              }
+                              
+                              // ШАГ 3: Если оплата в демо-режиме или уже подтверждена, создаём заказ
+                              // В демо-режиме подтверждаем оплату и создаём заказ
+                              // Передаем orderData для подтверждения оплаты
+                              await api.confirmPaymentForPrintOrder(
+                                bookId: bookId,
+                                orderData: orderData,
+                              );
+                              
+                              // Создаём заказ (после оплаты)
+                              // Используем уже сформированные fullAddress и phoneDigits
                               await api.createPrintOrder(
                                 bookId: bookId,
                                 bookTitle: book.title,
@@ -242,10 +340,10 @@ class BookOrderScreen extends HookConsumerWidget {
                                 pages: selectedPages.value.count,
                                 binding: selectedBinding.value.name,
                                 packaging: selectedPackaging.value.name,
-                                totalPrice: calculateTotal(),
+                                totalPrice: totalPrice,
                                 customerName: nameController.text.trim(),
-                                customerPhone: phoneController.text.trim(),
-                                customerAddress: addressController.text.trim(),
+                                customerPhone: phoneDigits.isNotEmpty ? phoneDigits : phoneController.text.trim(),
+                                customerAddress: fullAddress,
                                 comment: commentController.text.trim(),
                               );
                               
@@ -262,46 +360,49 @@ class BookOrderScreen extends HookConsumerWidget {
                                         const Text('Заказ оформлен!'),
                                       ],
                                     ),
-                                    content: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Спасибо за заказ!',
-                                          style: AppTypography.headlineSmall,
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Text(
-                                          'Мы свяжемся с вами в ближайшее время для подтверждения заказа и уточнения деталей доставки.',
-                                          style: AppTypography.bodyMedium,
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.surfaceVariant.withOpacity(0.5),
-                                            borderRadius: BorderRadius.circular(8),
+                                    content: SingleChildScrollView(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Спасибо за заказ!',
+                                            style: AppTypography.headlineSmall,
                                           ),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text('📏 ${selectedSize.value.name}'),
-                                              Text('📄 ${selectedPages.value.count} страниц'),
-                                              Text('📚 ${selectedBinding.value.name}'),
-                                              Text('🎁 ${selectedPackaging.value.name}'),
-                                              const Divider(),
-                                              Text(
-                                                'Итого: ${calculateTotal()} ₽',
-                                                style: safeCopyWith(
-                                                  AppTypography.headlineSmall,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: AppColors.primary,
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            'Мы свяжемся с вами в ближайшее время для подтверждения заказа и уточнения деталей доставки.',
+                                            style: AppTypography.bodyMedium,
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Container(
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.surfaceVariant.withOpacity(0.5),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text('📏 ${selectedSize.value.name}'),
+                                                Text('📄 ${selectedPages.value.count} страниц'),
+                                                Text('📚 ${selectedBinding.value.name}'),
+                                                Text('🎁 ${selectedPackaging.value.name}'),
+                                                const Divider(),
+                                                Text(
+                                                  'Итого: ${calculateTotal()} ₽',
+                                                  style: safeCopyWith(
+                                                    AppTypography.headlineSmall,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppColors.primary,
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                     actions: [
                                       TextButton(
@@ -387,54 +488,79 @@ class BookOrderScreen extends HookConsumerWidget {
 
   Widget _buildHeader(BuildContext context, String title, String? coverUrl) {
     return AppMagicCard(
-      padding: AppSpacing.paddingMD,
+      padding: AppSpacing.paddingLG,
       child: Row(
         children: [
-          // Миниатюра обложки
+          // Обложка книги
           Container(
-            width: 60,
-            height: 80,
+            width: 100,
+            height: 140,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.2),
-                  blurRadius: 8,
+                  color: AppColors.primary.withOpacity(0.3),
+                  blurRadius: 15,
+                  spreadRadius: 2,
                 ),
               ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: coverUrl != null
+              borderRadius: BorderRadius.circular(12),
+              child: coverUrl != null && coverUrl.isNotEmpty
                   ? RoundedImage(
                       imageUrl: coverUrl,
-                      width: 60,
-                      height: 80,
-                      radius: 8,
+                      width: 100,
+                      height: 140,
+                      radius: 12,
                     )
                   : Container(
-                      color: AppColors.primary,
-                      child: const Icon(Icons.book, color: Colors.white),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.primary,
+                            AppColors.secondary,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: const Icon(Icons.book, color: Colors.white, size: 48),
                     ),
             ),
           ),
-          const SizedBox(width: AppSpacing.md),
+          const SizedBox(width: AppSpacing.lg),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  '📖 Печатная книга',
-                  style: safeCopyWith(
-                    AppTypography.labelMedium,
-                    color: AppColors.primary,
-                  ),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.menu_book,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Печатная книга',
+                      style: safeCopyWith(
+                        AppTypography.labelLarge,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.sm),
                 Text(
                   title,
-                  style: AppTypography.headlineSmall,
-                  maxLines: 2,
+                  style: safeCopyWith(
+                    AppTypography.headlineSmall,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -732,7 +858,11 @@ class BookOrderScreen extends HookConsumerWidget {
     BuildContext context,
     TextEditingController nameController,
     TextEditingController phoneController,
-    TextEditingController addressController,
+    TextEditingController cityController,
+    TextEditingController streetController,
+    TextEditingController houseController,
+    TextEditingController apartmentController,
+    TextEditingController postalCodeController,
     TextEditingController commentController,
   ) {
     return AppMagicCard(
@@ -768,31 +898,21 @@ class BookOrderScreen extends HookConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           
-          // Телефон
-          TextFormField(
+          // Телефон с форматированием
+          PhoneInputField(
             controller: phoneController,
-            keyboardType: TextInputType.phone,
-            decoration: _inputDecoration('Телефон', Icons.phone_outlined),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Введите номер телефона';
-              }
-              return null;
-            },
+            label: 'Телефон',
+            hint: '+7 (XXX) XXX-XX-XX',
           ),
           const SizedBox(height: AppSpacing.md),
           
-          // Адрес
-          TextFormField(
-            controller: addressController,
-            maxLines: 2,
-            decoration: _inputDecoration('Адрес доставки', Icons.location_on_outlined),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Введите адрес доставки';
-              }
-              return null;
-            },
+          // Адрес с отдельными полями
+          AddressInputFields(
+            cityController: cityController,
+            streetController: streetController,
+            houseController: houseController,
+            apartmentController: apartmentController,
+            postalCodeController: postalCodeController,
           ),
           const SizedBox(height: AppSpacing.md),
           

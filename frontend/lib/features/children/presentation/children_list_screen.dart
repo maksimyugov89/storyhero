@@ -36,7 +36,7 @@ class AnimatedAddButton extends HookWidget {
   @override
   Widget build(BuildContext context) {
     final animationController = useAnimationController(
-      duration: const Duration(seconds: 2),
+        duration: const Duration(seconds: 2),
     );
 
     useEffect(() {
@@ -223,9 +223,9 @@ class ChildrenListScreen extends HookConsumerWidget {
               }
 
               return ListView.builder(
-                padding: AppSpacing.paddingMD,
+                      padding: AppSpacing.paddingMD,
                 itemCount: children.length + 1, // +1 для кнопки добавления
-                itemBuilder: (context, index) {
+                      itemBuilder: (context, index) {
                   // Если это последний элемент - показываем кнопку добавления
                   if (index == children.length) {
                     return Padding(
@@ -242,115 +242,115 @@ class ChildrenListScreen extends HookConsumerWidget {
                     );
                   }
                   
-                  final child = children[index];
-                  
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: AppSpacing.md),
-                    child: AppMagicCard(
-                      onTap: () => context.push(RouteNames.childProfile.replaceAll(':id', child.id)),
-                      padding: AppSpacing.paddingMD,
-                      child: Row(
-                        children: [
-                          // Фото
-                          if (child.faceUrl != null && child.faceUrl!.isNotEmpty)
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: RoundedImage(
-                                imageUrl: child.faceUrl,
-                                width: 60,
-                                height: 60,
-                                radius: 12,
-                              ),
-                            )
-                          else
-                            Container(
-                              width: 60,
-                              height: 60,
-                              decoration: BoxDecoration(
-                                gradient: AppColors.primaryGradient,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  child.name[0].toUpperCase(),
-                                  style: safeCopyWith(
-                                    AppTypography.headlineSmall,
-                                    color: AppColors.onPrimary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          
-                          const SizedBox(width: AppSpacing.md),
-                          
-                          // Информация
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
+                        final child = children[index];
+                        
+                        return Padding(
+                          padding: EdgeInsets.only(bottom: AppSpacing.md),
+                          child: AppMagicCard(
+                            onTap: () => context.push(RouteNames.childProfile.replaceAll(':id', child.id)),
+                            padding: AppSpacing.paddingMD,
+                            child: Row(
                               children: [
-                                Text(
-                                  child.name,
-                                  style: AppTypography.headlineSmall,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  softWrap: false,
-                                ),
-                                Text(
-                                  '${child.age} лет',
-                                  style: safeCopyWith(
-                                    AppTypography.bodyMedium,
-                                    color: AppColors.onSurfaceVariant,
+                                // Фото
+                                if (child.faceUrl != null && child.faceUrl!.isNotEmpty)
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: RoundedImage(
+                                      imageUrl: child.faceUrl,
+                                      width: 60,
+                                      height: 60,
+                                      radius: 12,
+                                    ),
+                                  )
+                                else
+                                  Container(
+                                    width: 60,
+                                    height: 60,
+                                    decoration: BoxDecoration(
+                                      gradient: AppColors.primaryGradient,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        child.name[0].toUpperCase(),
+                                        style: safeCopyWith(
+                                          AppTypography.headlineSmall,
+                                          color: AppColors.onPrimary,
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                
+                                const SizedBox(width: AppSpacing.md),
+                                
+                                // Информация
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        child.name,
+                                        style: AppTypography.headlineSmall,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        softWrap: false,
+                                      ),
+                                      Text(
+                                        '${child.age} лет',
+                                        style: safeCopyWith(
+                                          AppTypography.bodyMedium,
+                                          color: AppColors.onSurfaceVariant,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                
+                                // Quick actions
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: AssetIcon(
+                                        assetPath: AppIcons.edit,
+                                        size: 20,
+                                        color: AppColors.primary,
+                                      ),
+                                      onPressed: () {
+                                        context.push(
+                                          '/app/children/${child.id}/edit',
+                                          extra: child,
+                                        );
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: AssetIcon(
+                                        assetPath: AppIcons.delete,
+                                        size: 20,
+                                        color: AppColors.error,
+                                      ),
+                                      onPressed: () => _handleDeleteChild(context, ref, child),
+                                    ),
+                                    IconButton(
+                                      icon: AssetIcon(
+                                        assetPath: AppIcons.myBooks,
+                                        size: 20,
+                                        color: AppColors.secondary,
+                                      ),
+                                      onPressed: () {
+                                        context.push(RouteNames.childBooks.replaceAll(':id', child.id));
+                                      },
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
                           ),
-                          
-                          // Quick actions
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: AssetIcon(
-                                  assetPath: AppIcons.edit,
-                                  size: 20,
-                                  color: AppColors.primary,
-                                ),
-                                onPressed: () {
-                                  context.push(
-                                    '/app/children/${child.id}/edit',
-                                    extra: child,
-                                  );
-                                },
-                              ),
-                              IconButton(
-                                icon: AssetIcon(
-                                  assetPath: AppIcons.delete,
-                                  size: 20,
-                                  color: AppColors.error,
-                                ),
-                                onPressed: () => _handleDeleteChild(context, ref, child),
-                              ),
-                              IconButton(
-                                icon: AssetIcon(
-                                  assetPath: AppIcons.myBooks,
-                                  size: 20,
-                                  color: AppColors.secondary,
-                                ),
-                                onPressed: () {
-                                  context.push(RouteNames.childBooks.replaceAll(':id', child.id));
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
+                        );
+                      },
               );
             },
             loading: () => const LoadingWidget(),

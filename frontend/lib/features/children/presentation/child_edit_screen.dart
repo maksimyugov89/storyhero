@@ -18,6 +18,7 @@ import '../../../../core/widgets/rounded_image.dart';
 import '../../../../ui/components/photo_preview_grid.dart';
 import '../../../../ui/components/asset_icon.dart';
 import '../presentation/children_list_screen.dart';
+import '../presentation/child_profile_screen.dart'; // Для childProvider
 import '../data/child_photos_provider.dart';
 import '../../../core/models/child_photo.dart';
 import 'dart:io' if (dart.library.html) 'dart:html' as io;
@@ -35,6 +36,7 @@ class ChildEditScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final nameController = useTextEditingController(text: child.name);
     final ageController = useTextEditingController(text: child.age.toString());
+    final selectedGender = useState<ChildGender>(child.gender);
     final interestsController = useTextEditingController(text: child.interests ?? '');
     final fearsController = useTextEditingController(text: child.fears ?? '');
     final characterController = useTextEditingController(text: child.character ?? '');
@@ -180,6 +182,7 @@ class ChildEditScreen extends HookConsumerWidget {
           id: child.id,
           name: nameController.text.trim(),
           age: age,
+          gender: selectedGender.value,
           interests: interestsController.text.trim(),
           fears: fearsController.text.trim(),
           character: characterController.text.trim(),
@@ -189,8 +192,10 @@ class ChildEditScreen extends HookConsumerWidget {
           existingPhotoUrls: existingPhotoUrls.isNotEmpty ? existingPhotoUrls : null,
         );
 
-        // Обновляем провайдер фотографий
+        // Обновляем провайдеры для обновления UI
         ref.invalidate(childPhotosProvider(child.id));
+        ref.invalidate(childProvider(child.id));
+        ref.invalidate(childrenProvider); // Обновляем список "Дети" чтобы аватарка обновилась сразу
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -361,6 +366,47 @@ class ChildEditScreen extends HookConsumerWidget {
                 
                 const SizedBox(height: AppSpacing.md),
                 
+                // Выбор пола
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 8),
+                      child: Text(
+                        'Пол *',
+                        style: safeCopyWith(
+                          AppTypography.labelMedium,
+                          color: AppColors.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _GenderSelector(
+                            gender: ChildGender.male,
+                            selected: selectedGender.value,
+                            onSelected: (gender) => selectedGender.value = gender,
+                            enabled: !isLoading.value,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: _GenderSelector(
+                            gender: ChildGender.female,
+                            selected: selectedGender.value,
+                            onSelected: (gender) => selectedGender.value = gender,
+                            enabled: !isLoading.value,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: AppSpacing.md),
+                
                 AppTextField(
                   controller: interestsController,
                   label: 'Интересы',
@@ -467,6 +513,68 @@ class ChildEditScreen extends HookConsumerWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Виджет для выбора пола ребенка
+class _GenderSelector extends StatelessWidget {
+  final ChildGender gender;
+  final ChildGender? selected;
+  final Function(ChildGender) onSelected;
+  final bool enabled;
+
+  const _GenderSelector({
+    required this.gender,
+    required this.selected,
+    required this.onSelected,
+    required this.enabled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = selected == gender;
+    
+    return GestureDetector(
+      onTap: enabled ? () => onSelected(gender) : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withOpacity(0.2)
+              : AppColors.surfaceVariant.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primary
+                : AppColors.surfaceVariant,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              gender == ChildGender.male ? Icons.boy : Icons.girl,
+              color: isSelected
+                  ? AppColors.primary
+                  : AppColors.onSurfaceVariant,
+              size: 24,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              gender.displayName,
+              style: safeCopyWith(
+                AppTypography.labelLarge,
+                color: isSelected
+                    ? AppColors.primary
+                    : AppColors.onSurfaceVariant,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
         ),
       ),
     );

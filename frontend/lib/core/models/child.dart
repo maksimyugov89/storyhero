@@ -3,12 +3,53 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'child.freezed.dart';
 part 'child.g.dart';
 
+/// Пол ребенка
+enum ChildGender {
+  male,   // мальчик
+  female; // девочка
+
+  String get displayName {
+    switch (this) {
+      case ChildGender.male:
+        return 'Мальчик';
+      case ChildGender.female:
+        return 'Девочка';
+    }
+  }
+
+  static ChildGender? fromString(String? value) {
+    if (value == null) return null;
+    switch (value.toLowerCase()) {
+      case 'male':
+      case 'мальчик':
+      case 'boy':
+        return ChildGender.male;
+      case 'female':
+      case 'девочка':
+      case 'girl':
+        return ChildGender.female;
+      default:
+        return null;
+    }
+  }
+
+  String toApiValue() {
+    switch (this) {
+      case ChildGender.male:
+        return 'male';
+      case ChildGender.female:
+        return 'female';
+    }
+  }
+}
+
 @freezed
 class Child with _$Child {
   const factory Child({
     @JsonKey(fromJson: _idToString) required String id,
     required String name,
     required int age,
+    @JsonKey(fromJson: _genderFromJson) @Default(ChildGender.female) ChildGender gender,
     required String interests,
     required String fears,
     required String character,
@@ -18,6 +59,19 @@ class Child with _$Child {
   }) = _Child;
 
   factory Child.fromJson(Map<String, dynamic> json) => _$ChildFromJson(json);
+}
+
+ChildGender _genderFromJson(dynamic value) {
+  if (value == null) {
+    // Для обратной совместимости со старыми данными, если поле отсутствует, возвращаем female по умолчанию
+    return ChildGender.female;
+  }
+  final gender = ChildGender.fromString(value.toString());
+  if (gender == null) {
+    // Если значение некорректное, возвращаем дефолтное значение вместо ошибки
+    return ChildGender.female;
+  }
+  return gender;
 }
 
 String _idToString(dynamic value) {

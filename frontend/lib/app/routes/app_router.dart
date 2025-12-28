@@ -27,6 +27,7 @@ import '../../features/generate/presentation/create_book_screen.dart';
 import '../../features/generate/presentation/task_status_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/settings/presentation/help_screen.dart';
+import '../../features/settings/presentation/support_message_detail_screen.dart';
 import '../../features/subscription/presentation/subscription_screen.dart';
 import '../../features/payments/presentation/payment_screen.dart';
 import '../../core/models/child.dart';
@@ -254,6 +255,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RouteNames.help,
         builder: (_, __) => const HelpScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.supportMessageDetail,
+        builder: (context, state) {
+          final messageId = state.pathParameters['id']!;
+          return SupportMessageDetailScreen(messageId: messageId);
+        },
       ),
       GoRoute(
         path: RouteNames.subscription,

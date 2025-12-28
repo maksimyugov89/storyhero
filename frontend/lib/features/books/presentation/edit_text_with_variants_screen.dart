@@ -33,7 +33,7 @@ class EditTextWithVariantsScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sceneAsync = ref.watch(sceneProvider((bookId: bookId, sceneIndex: sceneIndex)));
-    final variantsNotifier = ref.watch(sceneVariantsProvider.notifier);
+    final variantsNotifier = ref.read(sceneVariantsProvider.notifier);
     final variants = ref.watch(sceneVariantsProvider);
     
     final instructionController = useTextEditingController();
@@ -41,6 +41,22 @@ class EditTextWithVariantsScreen extends HookConsumerWidget {
     final isLoading = useState(false);
     final errorMessage = useState<String?>(null);
     final showCustomInput = useState(false);
+    
+    // Инициализируем варианты отложенно, если их еще нет
+    useEffect(() {
+      sceneAsync.whenData((scene) {
+        // Отложенная инициализация после построения виджета
+        Future.microtask(() {
+          if (!variants.containsKey(scene.id)) {
+            variantsNotifier.getVariants(
+              scene.id,
+              originalText: scene.shortSummary,
+            );
+          }
+        });
+      });
+      return null;
+    }, [sceneAsync]);
 
     return AppPage(
       backgroundImage: 'assets/logo/storyhero_bg_generate_book.png',
@@ -66,10 +82,19 @@ class EditTextWithVariantsScreen extends HookConsumerWidget {
         ),
         body: sceneAsync.when(
           data: (scene) {
-            // Инициализируем варианты если их нет
-            final sceneVariants = variantsNotifier.getVariants(
-              scene.id,
-              originalText: scene.shortSummary,
+            // Получаем варианты (уже инициализированы через useEffect)
+            final sceneVariants = variants[scene.id] ?? SceneVariants(
+              sceneId: scene.id,
+              textVariants: [
+                TextVariant(
+                  id: '${scene.id}_text_0',
+                  text: scene.shortSummary,
+                  variantNumber: 0,
+                  isSelected: true,
+                ),
+              ],
+              imageVariants: [],
+              selectedTextVariantId: '${scene.id}_text_0',
             );
             final remainingEdits = variantsNotifier.remainingTextEdits(scene.id);
             final canEdit = variantsNotifier.canEditText(scene.id);
@@ -112,10 +137,11 @@ class EditTextWithVariantsScreen extends HookConsumerWidget {
                   }
                 } else {
                   // Генерируем через API
+                  // sceneIndex уже начинается с 0 (обложка), передаем напрямую
                   final api = ref.read(backendApiProvider);
                   final updatedScene = await api.updateText(
                     bookId: bookId,
-                    sceneIndex: sceneIndex + 1,
+                    sceneIndex: sceneIndex,
                     instruction: instruction,
                   );
 
@@ -147,6 +173,58 @@ class EditTextWithVariantsScreen extends HookConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Текущий текст сцены
+                  AppMagicCard(
+                    padding: AppSpacing.paddingMD,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            AssetIcon(
+                              assetPath: AppIcons.library,
+                              size: 20,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text(
+                              'Текущий текст сцены',
+                              style: safeCopyWith(
+                                AppTypography.headlineSmall,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Container(
+                          width: double.infinity,
+                          padding: AppSpacing.paddingMD,
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceVariant.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.primary.withOpacity(0.2),
+                            ),
+                          ),
+                          child: Text(
+                            scene.shortSummary.isNotEmpty 
+                                ? scene.shortSummary 
+                                : 'Текст отсутствует',
+                            style: safeCopyWith(
+                              AppTypography.bodyLarge,
+                              color: scene.shortSummary.isNotEmpty 
+                                  ? AppColors.onBackground 
+                                  : AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: AppSpacing.lg),
+                  
                   // Счетчик попыток
                   _buildAttemptsCounter(remainingEdits, canEdit),
                   

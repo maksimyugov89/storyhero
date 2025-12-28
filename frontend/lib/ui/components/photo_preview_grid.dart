@@ -160,6 +160,15 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
                 color: Colors.white,
               ),
         ),
+        const SizedBox(height: 8),
+        Text(
+          'Для лучшего сходства лица ребенка в будущей книге нужно четкое отображение лица ребенка на фото',
+          style: safeCopyWith(
+            Theme.of(context).textTheme.bodySmall,
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 12.0,
+          ),
+        ),
         const SizedBox(height: 16),
         Wrap(
           spacing: 16,

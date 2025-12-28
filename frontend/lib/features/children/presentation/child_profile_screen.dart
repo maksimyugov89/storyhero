@@ -17,6 +17,7 @@ import '../../../ui/components/photo_preview_grid.dart';
 import '../data/child_photos_provider.dart';
 import '../../../core/models/child_photo.dart';
 import '../../../core/utils/text_style_helpers.dart';
+import 'children_list_screen.dart';
 
 final childProvider = FutureProvider.family<Child, String>((ref, childId) async {
   final api = ref.watch(backendApiProvider);
@@ -408,10 +409,11 @@ class _PhotoGalleryWithAvatar extends HookConsumerWidget {
           photoUrl: photoUrl,
         );
 
-        // КРИТИЧЕСКИ ВАЖНО: Инвалидируем оба провайдера
+        // КРИТИЧЕСКИ ВАЖНО: Инвалидируем все провайдеры
         // API автоматически пересчитает is_avatar на основе нового face_url
         ref.invalidate(childPhotosProvider(childId));
         ref.invalidate(childProvider(childId));
+        ref.invalidate(childrenProvider); // Обновляем список "Дети" чтобы аватарка обновилась сразу
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

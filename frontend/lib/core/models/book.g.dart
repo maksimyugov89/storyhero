@@ -11,7 +11,7 @@ _$BookImpl _$$BookImplFromJson(Map<String, dynamic> json) => _$BookImpl(
   childId: _childIdToString(json['child_id']),
   userId: json['user_id'] as String?,
   title: json['title'] as String,
-  createdAt: DateTime.parse(json['created_at'] as String),
+  createdAt: _dateTimeFromJson(json['created_at']),
   status: json['status'] as String? ?? 'draft',
   coverUrl: json['cover_url'] as String?,
   finalPdfUrl: json['final_pdf_url'] as String?,

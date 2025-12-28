@@ -15,8 +15,8 @@ class BookStyle {
   });
 }
 
-/// Все доступные стили книг (25 стилей)
-/// 5 бесплатных + 20 премиум
+/// Все доступные стили книг (28 стилей)
+/// 5 бесплатных + 23 премиум
 const List<BookStyle> allBookStyles = [
   // ========== БЕСПЛАТНЫЕ СТИЛИ (5) ==========
   BookStyle(
@@ -75,6 +75,24 @@ const List<BookStyle> allBookStyles = [
     id: 'dreamworks',
     name: 'Мультфильмы',
     description: 'Стиль популярных мультфильмов',
+    isPremium: true,
+  ),
+  BookStyle(
+    id: 'marvel',
+    name: 'Марвел',
+    description: 'Стиль комиксов Marvel',
+    isPremium: true,
+  ),
+  BookStyle(
+    id: 'dc',
+    name: 'DC',
+    description: 'Стиль комиксов DC',
+    isPremium: true,
+  ),
+  BookStyle(
+    id: 'anime',
+    name: 'Аниме',
+    description: 'Японский аниме стиль',
     isPremium: true,
   ),
 

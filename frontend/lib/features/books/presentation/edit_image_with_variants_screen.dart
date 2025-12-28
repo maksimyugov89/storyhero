@@ -35,13 +35,29 @@ class EditImageWithVariantsScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sceneAsync = ref.watch(sceneProvider((bookId: bookId, sceneIndex: sceneIndex)));
-    final variantsNotifier = ref.watch(sceneVariantsProvider.notifier);
+    final variantsNotifier = ref.read(sceneVariantsProvider.notifier);
     final variants = ref.watch(sceneVariantsProvider);
     
     final instructionController = useTextEditingController();
     final isLoading = useState(false);
     final errorMessage = useState<String?>(null);
     final selectedVariantIndex = useState<int?>(null);
+    
+    // Инициализируем варианты отложенно, если их еще нет
+    useEffect(() {
+      sceneAsync.whenData((scene) {
+        // Отложенная инициализация после построения виджета
+        Future.microtask(() {
+          if (!variants.containsKey(scene.id)) {
+            variantsNotifier.getVariants(
+              scene.id,
+              originalImageUrl: scene.finalUrl ?? scene.draftUrl,
+            );
+          }
+        });
+      });
+      return null;
+    }, [sceneAsync]);
 
     return AppPage(
       backgroundImage: 'assets/logo/storyhero_bg_generate_book.png',
@@ -67,10 +83,23 @@ class EditImageWithVariantsScreen extends HookConsumerWidget {
         ),
         body: sceneAsync.when(
           data: (scene) {
-            // Инициализируем варианты если их нет
-            final sceneVariants = variantsNotifier.getVariants(
-              scene.id,
-              originalImageUrl: scene.finalUrl ?? scene.draftUrl,
+            // Получаем варианты (уже инициализированы через useEffect)
+            final sceneVariants = variants[scene.id] ?? SceneVariants(
+              sceneId: scene.id,
+              textVariants: [],
+              imageVariants: scene.finalUrl != null || scene.draftUrl != null
+                  ? [
+                      ImageVariant(
+                        id: '${scene.id}_image_0',
+                        imageUrl: scene.finalUrl ?? scene.draftUrl ?? '',
+                        variantNumber: 0,
+                        isSelected: true,
+                      ),
+                    ]
+                  : [],
+              selectedImageVariantId: scene.finalUrl != null || scene.draftUrl != null
+                  ? '${scene.id}_image_0'
+                  : null,
             );
             final remainingEdits = variantsNotifier.remainingImageEdits(scene.id);
             final canEdit = variantsNotifier.canEditImage(scene.id);
@@ -95,7 +124,7 @@ class EditImageWithVariantsScreen extends HookConsumerWidget {
                 final api = ref.read(backendApiProvider);
                 final updatedScene = await api.regenerateScene(
                   bookId: bookId,
-                  sceneOrder: sceneIndex + 1,
+                  sceneOrder: sceneIndex, // Индексация начинается с 0 (обложка)
                   instruction: instruction,
                 );
 

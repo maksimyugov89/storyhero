@@ -15,6 +15,7 @@ import '../../../ui/components/asset_icon.dart';
 import '../../../features/books/data/book_providers.dart';
 import '../../../core/models/book.dart';
 import 'book_view_screen.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 enum BookFilter { all, drafts, completed }
 
@@ -23,8 +24,30 @@ class BooksListScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selectedFilter = useState(BookFilter.all);
+    // Читаем фильтр из query параметров URL
+    final uri = GoRouterState.of(context).uri;
+    final filterParam = uri.queryParameters['filter'];
+    final initialFilter = filterParam == 'drafts'
+        ? BookFilter.drafts
+        : filterParam == 'completed'
+            ? BookFilter.completed
+            : BookFilter.all;
+    
+    final selectedFilter = useState(initialFilter);
     final booksAsync = ref.watch(booksProvider);
+    
+    // Обновляем фильтр при изменении query параметров
+    useEffect(() {
+      final currentFilter = filterParam == 'drafts'
+          ? BookFilter.drafts
+          : filterParam == 'completed'
+              ? BookFilter.completed
+              : BookFilter.all;
+      if (selectedFilter.value != currentFilter) {
+        selectedFilter.value = currentFilter;
+      }
+      return null;
+    }, [uri.toString()]);
 
     List<Book> filterBooks(List<Book> books, BookFilter filter) {
       switch (filter) {
@@ -75,7 +98,10 @@ class BooksListScreen extends HookConsumerWidget {
                     child: _FilterChip(
                       label: 'Все',
                       isSelected: selectedFilter.value == BookFilter.all,
-                      onTap: () => selectedFilter.value = BookFilter.all,
+                      onTap: () {
+                        selectedFilter.value = BookFilter.all;
+                        context.go(RouteNames.books);
+                      },
                     ),
                   ),
                   SizedBox(width: AppSpacing.xs),
@@ -84,7 +110,10 @@ class BooksListScreen extends HookConsumerWidget {
                       label: 'Черновики',
                       icon: AppIcons.draftPages,
                       isSelected: selectedFilter.value == BookFilter.drafts,
-                      onTap: () => selectedFilter.value = BookFilter.drafts,
+                      onTap: () {
+                        selectedFilter.value = BookFilter.drafts;
+                        context.go('${RouteNames.books}?filter=drafts');
+                      },
                     ),
                   ),
                   SizedBox(width: AppSpacing.xs),
@@ -93,7 +122,10 @@ class BooksListScreen extends HookConsumerWidget {
                       label: 'Готовые',
                       icon: AppIcons.secureBook,
                       isSelected: selectedFilter.value == BookFilter.completed,
-                      onTap: () => selectedFilter.value = BookFilter.completed,
+                      onTap: () {
+                        selectedFilter.value = BookFilter.completed;
+                        context.go('${RouteNames.books}?filter=completed');
+                      },
                     ),
                   ),
                 ],
@@ -168,11 +200,10 @@ class BooksListScreen extends HookConsumerWidget {
                               ),
                               child: Stack(
                                 children: [
-                                  RoundedImage(
-                                    imageUrl: book.coverUrl,
-                                    height: 180,
-                                    width: double.infinity,
-                                    radius: 0,
+                                  // Используем coverUrl, если он есть, иначе пытаемся получить из первой сцены
+                                  _BookCoverImage(
+                                    coverUrl: book.coverUrl,
+                                    bookId: book.id,
                                   ),
                                   // Статус
                                   Positioned(
@@ -276,6 +307,74 @@ class BooksListScreen extends HookConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Виджет для отображения обложки книги
+/// Использует coverUrl, если он есть, иначе пытается получить первое изображение из сцен
+class _BookCoverImage extends ConsumerWidget {
+  final String? coverUrl;
+  final String bookId;
+
+  const _BookCoverImage({
+    required this.coverUrl,
+    required this.bookId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Если есть coverUrl, используем его
+    if (coverUrl != null && coverUrl!.isNotEmpty) {
+      return RoundedImage(
+        imageUrl: coverUrl,
+        height: 180,
+        width: double.infinity,
+        radius: 0,
+      );
+    }
+
+    // Если coverUrl отсутствует, пытаемся получить первое изображение из сцен
+    final scenesAsync = ref.watch(bookScenesProvider(bookId));
+    
+    return scenesAsync.when(
+      data: (scenes) {
+        if (scenes.isEmpty) {
+          // Нет сцен - показываем placeholder
+          return RoundedImage(
+            imageUrl: null,
+            height: 180,
+            width: double.infinity,
+            radius: 0,
+          );
+        }
+
+        // Сортируем сцены по order и берем первую
+        final sortedScenes = [...scenes]..sort((a, b) => a.order.compareTo(b.order));
+        final firstScene = sortedScenes.first;
+        
+        // Используем finalUrl (готовое изображение) или draftUrl (черновик)
+        final imageUrl = firstScene.finalUrl ?? firstScene.draftUrl;
+        
+        return RoundedImage(
+          imageUrl: imageUrl,
+          height: 180,
+          width: double.infinity,
+          radius: 0,
+        );
+      },
+      loading: () => RoundedImage(
+        imageUrl: null,
+        height: 180,
+        width: double.infinity,
+        radius: 0,
+      ),
+      error: (_, __) => RoundedImage(
+        imageUrl: null,
+        height: 180,
+        width: double.infinity,
+        radius: 0,
       ),
     );
   }

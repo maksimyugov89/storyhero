@@ -31,9 +31,13 @@ class BookViewScreen extends ConsumerStatefulWidget {
 
 class _BookViewScreenState extends ConsumerState<BookViewScreen> {
   Timer? _imagePollingTimer;
+  Timer? _countdownTimer; // Таймер обратного отсчета
   bool _isDisposed = false;
   PageController? _pageController;
   int _currentPageIndex = 0;
+  final Map<int, bool> _pageFlipStates = {}; // Состояние переворота для каждой страницы
+  final Map<int, bool> _pageFlipDirection = {}; // Направление переворота: true = вперед, false = назад
+  DateTime? _generationStartTime; // Время начала генерации (для расчета таймера)
 
   @override
   void initState() {
@@ -52,6 +56,8 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
     _isDisposed = true;
     _imagePollingTimer?.cancel();
     _imagePollingTimer = null;
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
     _pageController?.dispose();
     _pageController = null;
     super.dispose();
@@ -79,11 +85,12 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
         await scenesAsync.when(
           data: (scenes) {
             // Проверяем, все ли изображения созданы
-            // Используем только finalUrl (image_url из API)
+            // Учитываем как finalUrl, так и draftUrl (черновые изображения)
             // Безопасная проверка без force unwrap с проверкой на пустой список
             final allImagesReady = scenes.isNotEmpty &&
                 scenes.every((scene) => 
-                  scene.finalUrl?.isNotEmpty ?? false
+                  (scene.finalUrl?.isNotEmpty ?? false) || 
+                  (scene.draftUrl?.isNotEmpty ?? false)
                 );
             
             if (allImagesReady) {
@@ -131,19 +138,59 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
             loading: () => 'Книга',
             error: (_, __) => 'Книга',
           ),
-          leading: IconButton(
-            icon: AssetIcon(
-              assetPath: AppIcons.back,
-              size: 24,
-              color: AppColors.onBackground,
-            ),
-            onPressed: () {
-              if (context.canPop()) {
-                context.pop();
-              } else {
-                context.go(RouteNames.home);
+          leading: bookAsync.when(
+            data: (book) {
+              // Определяем фильтр на основе статуса книги
+              final status = book.status;
+              String filterParam = '';
+              
+              // Определяем фильтр: черновики или готовые
+              if (status == 'draft' || status == 'editing') {
+                filterParam = '?filter=drafts';
+              } else if (status == 'completed' || status == 'finalized' || status == 'final') {
+                filterParam = '?filter=completed';
               }
+              
+              return IconButton(
+                icon: AssetIcon(
+                  assetPath: AppIcons.back,
+                  size: 24,
+                  color: AppColors.onBackground,
+                ),
+                onPressed: () {
+                  // Переходим на список книг с нужным фильтром
+                  context.go('${RouteNames.books}$filterParam');
+                },
+              );
             },
+            loading: () => IconButton(
+              icon: AssetIcon(
+                assetPath: AppIcons.back,
+                size: 24,
+                color: AppColors.onBackground,
+              ),
+              onPressed: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go(RouteNames.books);
+                }
+              },
+            ),
+            error: (_, __) => IconButton(
+              icon: AssetIcon(
+                assetPath: AppIcons.back,
+                size: 24,
+                color: AppColors.onBackground,
+              ),
+              onPressed: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go(RouteNames.books);
+                }
+              },
+            ),
           ),
           actions: [
             bookAsync.when(
@@ -213,9 +260,20 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                     if (confirmed == true && context.mounted) {
                       try {
                         final api = ref.read(backendApiProvider);
+                        
+                        // Останавливаем polling перед удалением
+                        _imagePollingTimer?.cancel();
+                        _imagePollingTimer = null;
+                        _countdownTimer?.cancel();
+                        _countdownTimer = null;
+                        
+                        // Инвалидируем провайдеры сцен ДО удаления, чтобы избежать ошибок
+                        ref.invalidate(bookScenesProvider(widget.bookId));
+                        ref.invalidate(bookProvider(widget.bookId));
+                        
                         await api.deleteBook(book.id);
                         
-                        // Обновляем список книг после успешного удаления (204 No Content)
+                        // Обновляем список книг после успешного удаления
                         ref.invalidate(booksProvider);
                         
                         if (context.mounted) {
@@ -225,7 +283,7 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                               backgroundColor: AppColors.success,
                             ),
                           );
-                          // Переходим на список книг ДО инвалидации провайдеров удаленной книги
+                          // Переходим на список книг после инвалидации провайдеров
                           context.go(RouteNames.books);
                         }
                       } catch (e) {
@@ -255,6 +313,7 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         AssetIcon(
                           assetPath: AppIcons.library,
@@ -275,11 +334,18 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                 final bookStatus = book.status;
                 final canEdit = bookStatus == 'draft' || bookStatus == 'editing';
                 
+                // Проверяем, готова ли книга и не оплачена ли она
+                final isCompleted = bookStatus == 'completed' || 
+                                   bookStatus == 'finalized' || 
+                                   bookStatus == 'final';
+                final needsPayment = isCompleted && !book.isPaid;
+                
                 // Проверяем статус изображений
-                // Используем только finalUrl (image_url из API)
+                // Учитываем как finalUrl, так и draftUrl (черновые изображения)
                 // Безопасная проверка без force unwrap
                 final imagesReady = sortedScenes.where((s) => 
-                  s.finalUrl?.isNotEmpty ?? false
+                  (s.finalUrl?.isNotEmpty ?? false) || 
+                  (s.draftUrl?.isNotEmpty ?? false)
                 ).length;
                 final totalScenes = sortedScenes.length;
                 // Проверка готовности всех изображений с проверкой на пустой список
@@ -305,6 +371,7 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                           ),
                         ),
                         child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -323,6 +390,7 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                                 Flexible(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
                                         '🎨 Создание изображений',
@@ -357,6 +425,43 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                               ),
                             ),
                             const SizedBox(height: 8),
+                            // Таймер обратного отсчета
+                            Builder(
+                              builder: (context) {
+                                final remainingImages = totalScenes - imagesReady;
+                                if (remainingImages <= 0) {
+                                  return const SizedBox.shrink();
+                                }
+                                
+                                // Среднее время генерации одного изображения: 12 секунд
+                                const avgTimePerImage = Duration(seconds: 12);
+                                final estimatedTime = avgTimePerImage * remainingImages;
+                                
+                                // Форматируем время
+                                final minutes = estimatedTime.inMinutes;
+                                final seconds = estimatedTime.inSeconds % 60;
+                                String timeText;
+                                if (minutes > 0) {
+                                  timeText = '$minutes ${minutes == 1 ? 'минута' : minutes < 5 ? 'минуты' : 'минут'}';
+                                  if (seconds > 0) {
+                                    timeText += ' $seconds ${seconds == 1 ? 'секунда' : seconds < 5 ? 'секунды' : 'секунд'}';
+                                  }
+                                } else {
+                                  timeText = '$seconds ${seconds == 1 ? 'секунда' : seconds < 5 ? 'секунды' : 'секунд'}';
+                                }
+                                
+                                return Text(
+                                  '⏱️ Примерное время до завершения: $timeText',
+                                  style: safeCopyWith(
+                                    AppTypography.bodySmall,
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 8),
                             Text(
                               '✏️ Пока можете редактировать текст!',
                               style: safeCopyWith(
@@ -373,6 +478,7 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                       Padding(
                         padding: AppSpacing.paddingMD,
                         child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             // Кнопки редактирования текущей сцены
                             Row(
@@ -384,30 +490,172 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                                     label: 'Текст',
                                     isEnabled: true,
                                     onPressed: () {
-                                      final scene = sortedScenes[_currentPageIndex];
+                                      // Используем _currentPageIndex напрямую, так как индексация начинается с 0 (обложка)
                                       context.push(RouteNames.bookTextEdit
                                           .replaceAll(':id', widget.bookId)
-                                          .replaceAll(':index', '${scene.order - 1}'));
+                                          .replaceAll(':index', '$_currentPageIndex'));
                                     },
                                   ),
                                 ),
                                 const SizedBox(width: AppSpacing.sm),
-                                // Кнопка редактирования изображения (только если создано)
+                                // Кнопка редактирования изображения (если есть finalUrl или draftUrl)
                                 Expanded(
                                   child: _buildEditButton(
                                     icon: Icons.image_outlined,
                                     label: 'Изображение',
-                                    isEnabled: sortedScenes[_currentPageIndex].finalUrl?.isNotEmpty ?? false,
+                                    isEnabled: (sortedScenes[_currentPageIndex].finalUrl?.isNotEmpty ?? false) ||
+                                             (sortedScenes[_currentPageIndex].draftUrl?.isNotEmpty ?? false),
                                     onPressed: () {
-                                      final scene = sortedScenes[_currentPageIndex];
+                                      // Используем _currentPageIndex напрямую, так как индексация начинается с 0 (обложка)
                                       context.push(RouteNames.bookImageEdit
                                           .replaceAll(':id', widget.bookId)
-                                          .replaceAll(':index', '${scene.order - 1}'));
+                                          .replaceAll(':index', '$_currentPageIndex'));
                                     },
                                   ),
                                 ),
                               ],
                             ),
+                            
+                            // Кнопка отправки на финальную генерацию (для черновиков)
+                            if (canEdit && (bookStatus == 'draft' || bookStatus == 'editing')) ...[
+                              const SizedBox(height: AppSpacing.md),
+                              AppMagicButton(
+                                onPressed: () async {
+                                  // Показываем диалог подтверждения
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: Row(
+                                        children: [
+                                          Icon(Icons.auto_awesome, color: AppColors.primary, size: 28),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: const Text('Отправить на финальную генерацию?'),
+                                          ),
+                                        ],
+                                      ),
+                                      content: SingleChildScrollView(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Книга будет отправлена на генерацию финальной версии с учетом всех ваших изменений:',
+                                              style: AppTypography.bodyMedium,
+                                            ),
+                                            const SizedBox(height: 12),
+                                            _buildFeatureRow(Icons.text_fields, 'Изменения в тексте'),
+                                            _buildFeatureRow(Icons.image, 'Изменения в изображениях'),
+                                            _buildFeatureRow(Icons.edit, 'Все правки сцен'),
+                                            const SizedBox(height: 12),
+                                            Container(
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.primary.withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.info_outline, color: AppColors.primary, size: 20),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Text(
+                                                      'После генерации вы сможете финализировать книгу',
+                                                      style: safeCopyWith(
+                                                        AppTypography.bodySmall,
+                                                        color: AppColors.primary,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.of(ctx).pop(false),
+                                          child: const Text('Отмена'),
+                                        ),
+                                        AppMagicButton(
+                                          onPressed: () => Navigator.of(ctx).pop(true),
+                                          child: const Text('Отправить'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  
+                                  if (confirmed == true && context.mounted) {
+                                    // Показываем индикатор загрузки
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Row(
+                                          children: [
+                                            SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                              ),
+                                            ),
+                                            SizedBox(width: 12),
+                                            Text('Отправка на генерацию...'),
+                                          ],
+                                        ),
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                    
+                                    try {
+                                      final api = ref.read(backendApiProvider);
+                                      final response = await api.generateFinalVersion(widget.bookId);
+                                      
+                                      // Обновляем данные книги
+                                      ref.invalidate(bookProvider(widget.bookId));
+                                      ref.invalidate(bookScenesProvider(widget.bookId));
+                                      
+                                      if (context.mounted) {
+                                        // Переходим на экран отслеживания статуса генерации
+                                        context.go(RouteNames.taskStatus.replaceAll(':id', response.taskId));
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Ошибка: ${e.toString().replaceAll('Exception: ', '')}'),
+                                            backgroundColor: AppColors.error,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  }
+                                },
+                                fullWidth: true,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.auto_awesome, color: Colors.white, size: 24),
+                                    const SizedBox(width: AppSpacing.sm),
+                                    Flexible(
+                                      child: Text(
+                                        '🚀 Отправить на финальную генерацию',
+                                        style: safeCopyWith(
+                                          AppTypography.labelLarge,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 2,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             
                             // Кнопка финализации (когда все готово)
                             if (allImagesReady && bookStatus == 'editing') ...[
@@ -425,6 +673,69 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                         ),
                       ),
 
+                    // Кнопка покупки PDF для готовых, но неоплаченных книг
+                    if (needsPayment)
+                      Padding(
+                        padding: AppSpacing.paddingMD,
+                        child: AppMagicButton(
+                          onPressed: () {
+                            context.go(RouteNames.bookComplete.replaceAll(':id', widget.bookId));
+                          },
+                          fullWidth: true,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.credit_card, color: Colors.white),
+                              const SizedBox(width: AppSpacing.sm),
+                              Flexible(
+                                child: Text(
+                                  'Купить PDF за 499 ₽',
+                                  style: safeCopyWith(
+                                    AppTypography.labelLarge,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    // Кнопка перехода к скачиванию/заказу для оплаченных книг
+                    if (isCompleted && book.isPaid)
+                      Padding(
+                        padding: AppSpacing.paddingMD,
+                        child: AppMagicButton(
+                          onPressed: () {
+                            context.go(RouteNames.bookComplete.replaceAll(':id', widget.bookId));
+                          },
+                          fullWidth: true,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.download, color: Colors.white),
+                              const SizedBox(width: AppSpacing.sm),
+                              Flexible(
+                                child: Text(
+                                  'Перейти к скачиванию и заказу',
+                                  style: safeCopyWith(
+                                    AppTypography.labelLarge,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
                     // Страницы с анимацией переворота
                     Expanded(
                       child: PageView.builder(
@@ -432,93 +743,282 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                         onPageChanged: (index) {
                           setState(() {
                             _currentPageIndex = index;
+                            // Сбрасываем состояние переворота только для предыдущей страницы
+                            // Не сбрасываем для текущей, чтобы анимация могла завершиться
+                            final prevIndex = index - 1;
+                            if (prevIndex >= 0) {
+                              _pageFlipStates.remove(prevIndex);
+                              _pageFlipDirection.remove(prevIndex);
+                            }
                           });
                         },
                         itemCount: sortedScenes.length,
                         itemBuilder: (context, index) {
                           final scene = sortedScenes[index];
-                          // Используем только finalUrl (image_url из API)
+                          // Учитываем как finalUrl, так и draftUrl (черновые изображения)
                           // Безопасная проверка без force unwrap
-                          final hasImage = scene.finalUrl?.isNotEmpty ?? false;
+                          final hasImage = (scene.finalUrl?.isNotEmpty ?? false) || 
+                                          (scene.draftUrl?.isNotEmpty ?? false);
                           final isLoading = !hasImage;
 
+                          // Определяем следующую и предыдущую сцены для анимации
+                          final nextScene = index < sortedScenes.length - 1 ? sortedScenes[index + 1] : null;
+                          final prevScene = index > 0 ? sortedScenes[index - 1] : null;
+                          
                           return Padding(
                             padding: AppSpacing.paddingMD,
-                            child: PageFlipAnimation(
-                              frontPage: BookPage(
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    if (!constraints.maxWidth.isFinite || !constraints.maxHeight.isFinite || 
-                                        constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    
-                                    return Padding(
-                                      padding: AppSpacing.paddingLG,
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // Заголовок сцены
-                                          Row(
-                                            children: [
-                                              Flexible(
-                                                child: Container(
-                                                  padding: const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 6,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    gradient: AppColors.primaryGradient,
-                                                    borderRadius: BorderRadius.circular(20),
-                                                  ),
-                                                  child: Text(
-                                                    'Сцена ${scene.order}',
-                                                    style: safeCopyWith(
-                                                      AppTypography.labelMedium,
-                                                      color: AppColors.onPrimary,
-                                                      fontWeight: FontWeight.bold,
+                            child: GestureDetector(
+                              onTapDown: (details) {
+                                // Определяем, на какую половину страницы нажали
+                                final screenWidth = MediaQuery.of(context).size.width;
+                                final tapX = details.globalPosition.dx;
+                                
+                                // Если нажали на правую половину - следующая страница
+                                if (tapX > screenWidth / 2 && index < sortedScenes.length - 1) {
+                                  // Запускаем анимацию переворота вперед
+                                  setState(() {
+                                    _pageFlipStates[index] = true;
+                                    _pageFlipDirection[index] = true; // вперед
+                                  });
+                                }
+                                // Если нажали на левую половину - предыдущая страница
+                                else if (tapX < screenWidth / 2 && index > 0) {
+                                  // Запускаем анимацию переворота назад
+                                  setState(() {
+                                    _pageFlipStates[index] = true;
+                                    _pageFlipDirection[index] = false; // назад
+                                  });
+                                }
+                              },
+                              child: PageFlipAnimation(
+                                isFlipped: _pageFlipStates[index] ?? false,
+                                frontPage: BookPage(
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      if (!constraints.maxWidth.isFinite || !constraints.maxHeight.isFinite || 
+                                          constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      
+                                      return Padding(
+                                        padding: AppSpacing.paddingLG,
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            // Заголовок сцены
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 6,
                                                     ),
-                                                    overflow: TextOverflow.ellipsis,
+                                                    decoration: BoxDecoration(
+                                                      gradient: AppColors.primaryGradient,
+                                                      borderRadius: BorderRadius.circular(20),
+                                                    ),
+                                                    child: Text(
+                                                      'Сцена ${scene.order}',
+                                                      style: safeCopyWith(
+                                                        AppTypography.labelMedium,
+                                                        color: AppColors.onPrimary,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                      overflow: TextOverflow.ellipsis,
+                                                      maxLines: 1,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            
+                                            const SizedBox(height: AppSpacing.lg),
+                                            
+                                            // Изображение или placeholder
+                                            Flexible(
+                                              flex: 3,
+                                              child: ConstrainedBox(
+                                                constraints: BoxConstraints(
+                                                  maxHeight: constraints.maxHeight * 0.55, // Максимум 55% от высоты
+                                                  minHeight: 150,
+                                                ),
+                                                child: hasImage && (scene.finalUrl != null || scene.draftUrl != null)
+                                                    ? ClipRRect(
+                                                        borderRadius: BorderRadius.circular(16),
+                                                        child: RoundedImage(
+                                                          imageUrl: scene.finalUrl ?? scene.draftUrl,
+                                                          height: double.infinity,
+                                                          width: double.infinity,
+                                                          radius: 16,
+                                                        ),
+                                                      )
+                                                    : ClipRRect(
+                                                        borderRadius: BorderRadius.circular(16),
+                                                        child: _buildImagePlaceholder(isLoading: isLoading),
+                                                      ),
+                                              ),
+                                            ),
+                                            
+                                            const SizedBox(height: AppSpacing.lg),
+                                            
+                                            // Текст с ограничением высоты
+                                            Flexible(
+                                              child: ConstrainedBox(
+                                                constraints: BoxConstraints(
+                                                  maxHeight: constraints.maxHeight * 0.25, // Максимум 25% от высоты
+                                                ),
+                                                child: SingleChildScrollView(
+                                                  child: Padding(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                                                    child: Text(
+                                                      scene.shortSummary,
+                                                      style: AppTypography.bodyLarge,
+                                                      maxLines: null,
+                                                      overflow: TextOverflow.visible,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
-                                            ],
-                                          ),
-                                          
-                                          const SizedBox(height: AppSpacing.lg),
-                                          
-                                          // Изображение или placeholder
-                                            Expanded(
-                                            child: hasImage && scene.finalUrl != null
-                                                ? ClipRRect(
-                                                borderRadius: BorderRadius.circular(16),
-                                                child: RoundedImage(
-                                                      imageUrl: scene.finalUrl, // RoundedImage обрабатывает null/пустую строку
-                                                  height: double.infinity,
-                                                  width: double.infinity,
-                                                  radius: 16,
-                                                ),
-                                                  )
-                                                : _buildImagePlaceholder(isLoading: isLoading),
                                             ),
-                                          
-                                          const SizedBox(height: AppSpacing.lg),
-                                          
-                                          // Текст
-                                          Flexible(
-                                            child: SingleChildScrollView(
-                                              child: Text(
-                                                scene.shortSummary,
-                                                style: AppTypography.bodyLarge,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
                                 ),
+                                backPage: nextScene != null
+                                    ? BookPage(
+                                        child: LayoutBuilder(
+                                          builder: (context, constraints) {
+                                            if (!constraints.maxWidth.isFinite || !constraints.maxHeight.isFinite || 
+                                                constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            
+                                            return Padding(
+                                              padding: AppSpacing.paddingLG,
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Flexible(
+                                                        child: Container(
+                                                          padding: const EdgeInsets.symmetric(
+                                                            horizontal: 12,
+                                                            vertical: 6,
+                                                          ),
+                                                          decoration: BoxDecoration(
+                                                            gradient: AppColors.primaryGradient,
+                                                            borderRadius: BorderRadius.circular(20),
+                                                          ),
+                                                          child: Text(
+                                                            'Сцена ${nextScene.order}',
+                                                            style: safeCopyWith(
+                                                              AppTypography.labelMedium,
+                                                              color: AppColors.onPrimary,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                            overflow: TextOverflow.ellipsis,
+                                                            maxLines: 1,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: AppSpacing.lg),
+                                                  Flexible(
+                                                    flex: 3,
+                                                    child: ConstrainedBox(
+                                                      constraints: BoxConstraints(
+                                                        maxHeight: constraints.maxHeight * 0.55, // Максимум 55% от высоты
+                                                        minHeight: 150,
+                                                      ),
+                                                      child: ((nextScene.finalUrl?.isNotEmpty ?? false) || (nextScene.draftUrl?.isNotEmpty ?? false)) && 
+                                                             (nextScene.finalUrl != null || nextScene.draftUrl != null)
+                                                          ? ClipRRect(
+                                                              borderRadius: BorderRadius.circular(16),
+                                                              child: RoundedImage(
+                                                                imageUrl: nextScene.finalUrl ?? nextScene.draftUrl,
+                                                                height: double.infinity,
+                                                                width: double.infinity,
+                                                                radius: 16,
+                                                              ),
+                                                            )
+                                                          : ClipRRect(
+                                                              borderRadius: BorderRadius.circular(16),
+                                                              child: _buildImagePlaceholder(isLoading: !((nextScene.finalUrl?.isNotEmpty ?? false) || (nextScene.draftUrl?.isNotEmpty ?? false))),
+                                                            ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: AppSpacing.lg),
+                                                  Flexible(
+                                                    child: ConstrainedBox(
+                                                      constraints: BoxConstraints(
+                                                        maxHeight: constraints.maxHeight * 0.25, // Максимум 25% от высоты
+                                                      ),
+                                                      child: SingleChildScrollView(
+                                                        child: Padding(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                                                          child: Text(
+                                                            nextScene.shortSummary,
+                                                            style: AppTypography.bodyLarge,
+                                                            maxLines: null,
+                                                            overflow: TextOverflow.visible,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      )
+                                    : null,
+                                onFlipComplete: () {
+                                  // После завершения анимации переворота переключаем страницу
+                                  if (mounted) {
+                                    final wasFlipped = _pageFlipStates[index] ?? false;
+                                    final direction = _pageFlipDirection[index] ?? true;
+                                    
+                                    if (wasFlipped) {
+                                      // Небольшая задержка для более плавного перехода
+                                      Future.delayed(const Duration(milliseconds: 50), () {
+                                        if (!mounted) return;
+                                        
+                                        // Переключаем страницу в нужном направлении
+                                        if (direction && index < sortedScenes.length - 1) {
+                                          // Вперед - следующая страница
+                                          _pageController?.nextPage(
+                                            duration: const Duration(milliseconds: 400),
+                                            curve: Curves.easeInOutCubic,
+                                          );
+                                        } else if (!direction && index > 0) {
+                                          // Назад - предыдущая страница
+                                          _pageController?.previousPage(
+                                            duration: const Duration(milliseconds: 400),
+                                            curve: Curves.easeInOutCubic,
+                                          );
+                                        }
+                                        
+                                        // Сбрасываем состояние переворота после небольшой задержки
+                                        Future.delayed(const Duration(milliseconds: 100), () {
+                                          if (mounted) {
+                                            setState(() {
+                                              _pageFlipStates.remove(index);
+                                              _pageFlipDirection.remove(index);
+                                            });
+                                          }
+                                        });
+                                      });
+                                    }
+                                  }
+                                },
                               ),
                             ),
                           );
@@ -543,8 +1043,8 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                             onPressed: _currentPageIndex > 0
                                 ? () {
                                     _pageController?.previousPage(
-                                      duration: const Duration(milliseconds: 300),
-                                      curve: Curves.easeInOut,
+                                      duration: const Duration(milliseconds: 400),
+                                      curve: Curves.easeInOutCubic,
                                     );
                                   }
                                 : null,
@@ -570,8 +1070,8 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                             onPressed: _currentPageIndex < sortedScenes.length - 1
                                 ? () {
                                     _pageController?.nextPage(
-                                      duration: const Duration(milliseconds: 300),
-                                      curve: Curves.easeInOut,
+                                      duration: const Duration(milliseconds: 400),
+                                      curve: Curves.easeInOutCubic,
                                     );
                                   }
                                 : null,
@@ -583,17 +1083,51 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                 );
               },
               loading: () => const LoadingWidget(),
-              error: (error, stack) => ErrorDisplayWidget(
-                error: error,
-                onRetry: () => ref.invalidate(bookScenesProvider(widget.bookId)),
-              ),
+              error: (error, stack) {
+                print('[BookViewScreen] Ошибка загрузки сцен: $error');
+                return ErrorDisplayWidget(
+                  error: error,
+                  customMessage: 'Не удалось загрузить сцены книги. Попробуйте обновить страницу.',
+                  onRetry: () {
+                    ref.invalidate(bookScenesProvider(widget.bookId));
+                    ref.invalidate(bookProvider(widget.bookId));
+                  },
+                  onExit: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go(RouteNames.books);
+                    }
+                  },
+                );
+              },
             );
           },
           loading: () => const LoadingWidget(),
-          error: (error, stack) => ErrorDisplayWidget(
-            error: error,
-            onRetry: () => ref.invalidate(bookProvider(widget.bookId)),
-          ),
+          error: (error, stack) {
+            print('[BookViewScreen] Ошибка загрузки книги: $error');
+            print('[BookViewScreen] Stack trace: $stack');
+            return ErrorDisplayWidget(
+              error: error,
+              customMessage: error.toString().contains('не найдена') || error.toString().contains('404')
+                  ? 'Книга не найдена. Возможно, она была удалена или ID книги некорректен.'
+                  : null,
+              onRetry: () {
+                // Инвалидируем оба провайдера
+                ref.invalidate(bookProvider(widget.bookId));
+                ref.invalidate(bookScenesProvider(widget.bookId));
+                // Также обновляем список книг
+                ref.invalidate(booksProvider);
+              },
+              onExit: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go(RouteNames.books);
+                }
+              },
+            );
+          },
         ),
       ),
     );
@@ -628,6 +1162,7 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
@@ -635,12 +1170,16 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
               color: isEnabled ? AppColors.primary : AppColors.onSurfaceVariant,
             ),
             const SizedBox(width: 8),
-            Text(
-              label,
-              style: safeCopyWith(
-                AppTypography.labelLarge,
-                color: isEnabled ? AppColors.primary : AppColors.onSurfaceVariant,
-                fontWeight: isEnabled ? FontWeight.bold : FontWeight.normal,
+            Flexible(
+              child: Text(
+                label,
+                style: safeCopyWith(
+                  AppTypography.labelLarge,
+                  color: isEnabled ? AppColors.primary : AppColors.onSurfaceVariant,
+                  fontWeight: isEnabled ? FontWeight.bold : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
             ),
             if (!isEnabled) ...[
@@ -660,6 +1199,9 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
   Widget _buildImagePlaceholder({required bool isLoading}) {
     return Container(
       width: double.infinity,
+      constraints: const BoxConstraints(
+        minHeight: 150,
+      ),
       decoration: BoxDecoration(
         color: AppColors.surfaceVariant.withOpacity(0.3),
         borderRadius: BorderRadius.circular(16),
@@ -669,61 +1211,107 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
         ),
       ),
       child: isLoading
-          ? Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Lottie анимация загрузки
-                SizedBox(
-                  width: 80,
-                  height: 80,
-                  child: Lottie.asset(
-                    'assets/animations/login_magic_swirl.json',
-                    fit: BoxFit.contain,
-                    repeat: true,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  '✨ Создание изображения...',
-                  style: safeCopyWith(
-                    AppTypography.bodyMedium,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'Магия в процессе',
-                  style: safeCopyWith(
-                    AppTypography.bodySmall,
-                    color: AppColors.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            )
-          : Center(
+          ? Padding(
+              padding: const EdgeInsets.symmetric(
+                vertical: AppSpacing.md,
+                horizontal: AppSpacing.md,
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  AssetIcon(
-                    assetPath: AppIcons.library,
-                    size: 48,
-                    color: AppColors.onSurfaceVariant.withOpacity(0.5),
+                  // Lottie анимация загрузки
+                  SizedBox(
+                    width: 80,
+                    height: 80,
+                    child: Lottie.asset(
+                      'assets/animations/login_magic_swirl.json',
+                      fit: BoxFit.contain,
+                      repeat: true,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    'Изображение не готово',
-                    style: safeCopyWith(
-                      AppTypography.bodySmall,
-                      color: AppColors.onSurfaceVariant,
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+                      child: Text(
+                        '✨ Создание изображения...',
+                        style: safeCopyWith(
+                          AppTypography.bodyMedium,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+                      child: Text(
+                        'Магия в процессе',
+                        style: safeCopyWith(
+                          AppTypography.bodySmall,
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
                 ],
               ),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AssetIcon(
+                      assetPath: AppIcons.library,
+                      size: 48,
+                      color: AppColors.onSurfaceVariant.withOpacity(0.5),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+                      child: Text(
+                        'Изображение не готово',
+                        style: safeCopyWith(
+                          AppTypography.bodySmall,
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
+    );
+  }
+
+  Widget _buildFeatureRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: AppTypography.bodySmall,
+          ),
+        ],
+      ),
     );
   }
 }

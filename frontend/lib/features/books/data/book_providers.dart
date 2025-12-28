@@ -13,14 +13,28 @@ final booksProvider = FutureProvider<List<Book>>((ref) async {
 final bookProvider = FutureProvider.family<Book, String>((ref, bookId) async {
   final api = ref.watch(backendApiProvider);
   try {
-    return await api.getBook(bookId);
-  } catch (e) {
-    // Если getBook не работает, пробуем старый способ
-    final books = await api.getBooks();
+    print('[bookProvider] Попытка получить книгу по ID: $bookId');
+    final book = await api.getBook(bookId);
+    print('[bookProvider] ✅ Книга успешно получена: ${book.title} (ID: ${book.id}, статус: ${book.status})');
+    return book;
+  } catch (e, stackTrace) {
+    print('[bookProvider] ❌ Ошибка при получении книги по ID: $e');
+    print('[bookProvider] Stack trace: $stackTrace');
+    print('[bookProvider] Пробуем найти книгу в списке всех книг...');
+    // Если getBook не работает (404), пробуем найти в списке всех книг
     try {
-      return books.firstWhere((b) => b.id == bookId);
-    } catch (_) {
-      throw Exception('Книга с ID $bookId не найдена');
+      final books = await api.getBooks();
+      print('[bookProvider] Получен список из ${books.length} книг');
+      print('[bookProvider] ID книг в списке: ${books.map((b) => b.id).join(", ")}');
+      final foundBook = books.firstWhere(
+        (b) => b.id == bookId,
+        orElse: () => throw Exception('Книга с ID $bookId не найдена в списке'),
+      );
+      print('[bookProvider] ✅ Книга найдена в списке: ${foundBook.title} (ID: ${foundBook.id}, статус: ${foundBook.status})');
+      return foundBook;
+    } catch (listError) {
+      print('[bookProvider] ❌ Книга не найдена в списке: $listError');
+      throw Exception('Книга с ID $bookId не найдена. Возможно, она была удалена.');
     }
   }
 });
@@ -28,7 +42,21 @@ final bookProvider = FutureProvider.family<Book, String>((ref, bookId) async {
 /// Провайдер для получения сцен книги
 final bookScenesProvider = FutureProvider.family<List<Scene>, String>((ref, bookId) async {
   final api = ref.watch(backendApiProvider);
-  return await api.getBookScenes(bookId);
+  try {
+    print('[bookScenesProvider] Запрос сцен для книги: $bookId');
+    final scenes = await api.getBookScenes(bookId);
+    print('[bookScenesProvider] ✅ Получено ${scenes.length} сцен для книги $bookId');
+    if (scenes.isNotEmpty) {
+      print('[bookScenesProvider] Первая сцена: order=${scenes.first.order}, id=${scenes.first.id}');
+    } else {
+      print('[bookScenesProvider] ⚠️ Список сцен пуст для книги $bookId');
+    }
+    return scenes;
+  } catch (e, stackTrace) {
+    print('[bookScenesProvider] ❌ Ошибка при получении сцен: $e');
+    print('[bookScenesProvider] Stack trace: $stackTrace');
+    rethrow;
+  }
 });
 
 /// Провайдер для получения одной сцены

@@ -25,6 +25,8 @@ mixin _$Child {
   String get id => throw _privateConstructorUsedError;
   String get name => throw _privateConstructorUsedError;
   int get age => throw _privateConstructorUsedError;
+  @JsonKey(fromJson: _genderFromJson)
+  ChildGender get gender => throw _privateConstructorUsedError;
   String get interests => throw _privateConstructorUsedError;
   String get fears => throw _privateConstructorUsedError;
   String get character => throw _privateConstructorUsedError;
@@ -52,6 +54,7 @@ abstract class $ChildCopyWith<$Res> {
     @JsonKey(fromJson: _idToString) String id,
     String name,
     int age,
+    @JsonKey(fromJson: _genderFromJson) ChildGender gender,
     String interests,
     String fears,
     String character,
@@ -79,6 +82,7 @@ class _$ChildCopyWithImpl<$Res, $Val extends Child>
     Object? id = null,
     Object? name = null,
     Object? age = null,
+    Object? gender = null,
     Object? interests = null,
     Object? fears = null,
     Object? character = null,
@@ -100,6 +104,10 @@ class _$ChildCopyWithImpl<$Res, $Val extends Child>
                 ? _value.age
                 : age // ignore: cast_nullable_to_non_nullable
                       as int,
+            gender: null == gender
+                ? _value.gender
+                : gender // ignore: cast_nullable_to_non_nullable
+                      as ChildGender,
             interests: null == interests
                 ? _value.interests
                 : interests // ignore: cast_nullable_to_non_nullable
@@ -142,6 +150,7 @@ abstract class _$$ChildImplCopyWith<$Res> implements $ChildCopyWith<$Res> {
     @JsonKey(fromJson: _idToString) String id,
     String name,
     int age,
+    @JsonKey(fromJson: _genderFromJson) ChildGender gender,
     String interests,
     String fears,
     String character,
@@ -168,6 +177,7 @@ class __$$ChildImplCopyWithImpl<$Res>
     Object? id = null,
     Object? name = null,
     Object? age = null,
+    Object? gender = null,
     Object? interests = null,
     Object? fears = null,
     Object? character = null,
@@ -189,6 +199,10 @@ class __$$ChildImplCopyWithImpl<$Res>
             ? _value.age
             : age // ignore: cast_nullable_to_non_nullable
                   as int,
+        gender: null == gender
+            ? _value.gender
+            : gender // ignore: cast_nullable_to_non_nullable
+                  as ChildGender,
         interests: null == interests
             ? _value.interests
             : interests // ignore: cast_nullable_to_non_nullable
@@ -225,6 +239,7 @@ class _$ChildImpl implements _Child {
     @JsonKey(fromJson: _idToString) required this.id,
     required this.name,
     required this.age,
+    @JsonKey(fromJson: _genderFromJson) this.gender = ChildGender.female,
     required this.interests,
     required this.fears,
     required this.character,
@@ -244,6 +259,9 @@ class _$ChildImpl implements _Child {
   final String name;
   @override
   final int age;
+  @override
+  @JsonKey(fromJson: _genderFromJson)
+  final ChildGender gender;
   @override
   final String interests;
   @override
@@ -268,7 +286,7 @@ class _$ChildImpl implements _Child {
 
   @override
   String toString() {
-    return 'Child(id: $id, name: $name, age: $age, interests: $interests, fears: $fears, character: $character, moral: $moral, faceUrl: $faceUrl, photos: $photos)';
+    return 'Child(id: $id, name: $name, age: $age, gender: $gender, interests: $interests, fears: $fears, character: $character, moral: $moral, faceUrl: $faceUrl, photos: $photos)';
   }
 
   @override
@@ -279,6 +297,7 @@ class _$ChildImpl implements _Child {
             (identical(other.id, id) || other.id == id) &&
             (identical(other.name, name) || other.name == name) &&
             (identical(other.age, age) || other.age == age) &&
+            (identical(other.gender, gender) || other.gender == gender) &&
             (identical(other.interests, interests) ||
                 other.interests == interests) &&
             (identical(other.fears, fears) || other.fears == fears) &&
@@ -296,6 +315,7 @@ class _$ChildImpl implements _Child {
     id,
     name,
     age,
+    gender,
     interests,
     fears,
     character,
@@ -323,6 +343,7 @@ abstract class _Child implements Child {
     @JsonKey(fromJson: _idToString) required final String id,
     required final String name,
     required final int age,
+    @JsonKey(fromJson: _genderFromJson) final ChildGender gender,
     required final String interests,
     required final String fears,
     required final String character,
@@ -341,6 +362,9 @@ abstract class _Child implements Child {
   String get name;
   @override
   int get age;
+  @override
+  @JsonKey(fromJson: _genderFromJson)
+  ChildGender get gender;
   @override
   String get interests;
   @override

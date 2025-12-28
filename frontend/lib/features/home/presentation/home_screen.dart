@@ -13,6 +13,9 @@ import '../../../ui/components/asset_icon.dart';
 import '../../../features/books/data/book_providers.dart';
 import '../../../core/widgets/rounded_image.dart';
 import '../../../core/utils/text_style_helpers.dart';
+import '../../../core/api/backend_api.dart';
+import '../../../core/widgets/magic/magic_text.dart';
+import '../../../core/presentation/design_system/app_colors.dart';
 
 class HomeScreen extends HookConsumerWidget {
   const HomeScreen({super.key});
@@ -68,8 +71,37 @@ class HomeScreen extends HookConsumerWidget {
       overlayOpacity: 0.2,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppAppBar(
-          title: 'StoryHero',
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          title: ShaderMask(
+            shaderCallback: (bounds) => AppColors.magicGradient.createShader(
+              Rect.fromLTWH(0, 0, bounds.width, bounds.height),
+            ),
+            child: Text(
+              'StoryHero',
+              style: safeCopyWith(
+                AppTypography.headlineSmall,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 24,
+              ).copyWith(
+                shadows: [
+                  Shadow(
+                    color: AppColors.primary.withOpacity(0.5),
+                    blurRadius: 12,
+                    offset: const Offset(0, 2),
+                  ),
+                  Shadow(
+                    color: AppColors.secondary.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
         body: FadeTransition(
           opacity: fadeAnimation,
@@ -78,19 +110,39 @@ class HomeScreen extends HookConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.lg),
                 
-                // Приветствие
-                Text(
-                  'Добро пожаловать!',
-                  style: safeCopyWith(AppTypography.headlineMedium),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Что хотите сделать?',
-                  style: safeCopyWith(
-                    AppTypography.bodyLarge,
-                    color: AppColors.onSurfaceVariant,
+                // Приветствие с градиентом
+                ShaderMask(
+                  shaderCallback: (bounds) => AppColors.magicGradient.createShader(
+                    Rect.fromLTWH(0, 0, bounds.width, bounds.height),
+                  ),
+                  child: Text(
+                    'Добро пожаловать!',
+                    style: safeCopyWith(
+                      AppTypography.headlineLarge,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 32,
+                    ).copyWith(
+                      shadows: [
+                        Shadow(
+                          color: AppColors.primary.withOpacity(0.6),
+                          blurRadius: 16,
+                          offset: const Offset(0, 3),
+                        ),
+                        Shadow(
+                          color: AppColors.secondary.withOpacity(0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 2),
+                        ),
+                        Shadow(
+                          color: AppColors.accent.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 
@@ -239,11 +291,9 @@ class HomeScreen extends HookConsumerWidget {
                                           borderRadius: const BorderRadius.vertical(
                                             top: Radius.circular(16),
                                           ),
-                                          child: RoundedImage(
-                                            imageUrl: book.coverUrl,
-                                            width: double.infinity,
-                                            height: double.infinity,
-                                            radius: 0,
+                                          child: _RecentBookCoverImage(
+                                            coverUrl: book.coverUrl,
+                                            bookId: book.id,
                                           ),
                                         ),
                                       ),
@@ -299,6 +349,74 @@ class HomeScreen extends HookConsumerWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Виджет для отображения обложки книги в разделе "Недавние книги"
+/// Использует coverUrl, если он есть, иначе пытается получить первое изображение из сцен
+class _RecentBookCoverImage extends ConsumerWidget {
+  final String? coverUrl;
+  final String bookId;
+
+  const _RecentBookCoverImage({
+    required this.coverUrl,
+    required this.bookId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Если есть coverUrl, используем его
+    if (coverUrl != null && coverUrl!.isNotEmpty) {
+      return RoundedImage(
+        imageUrl: coverUrl,
+        width: double.infinity,
+        height: double.infinity,
+        radius: 0,
+      );
+    }
+
+    // Если coverUrl отсутствует, пытаемся получить первое изображение из сцен
+    final scenesAsync = ref.watch(bookScenesProvider(bookId));
+
+    return scenesAsync.when(
+      data: (scenes) {
+        if (scenes.isEmpty) {
+          // Нет сцен - показываем placeholder
+          return RoundedImage(
+            imageUrl: null,
+            width: double.infinity,
+            height: double.infinity,
+            radius: 0,
+          );
+        }
+
+        // Сортируем сцены по order и берем первую
+        final sortedScenes = [...scenes]..sort((a, b) => a.order.compareTo(b.order));
+        final firstScene = sortedScenes.first;
+
+        // Используем finalUrl (готовое изображение) или draftUrl (черновик)
+        final imageUrl = firstScene.finalUrl ?? firstScene.draftUrl;
+
+        return RoundedImage(
+          imageUrl: imageUrl,
+          width: double.infinity,
+          height: double.infinity,
+          radius: 0,
+        );
+      },
+      loading: () => RoundedImage(
+        imageUrl: null,
+        width: double.infinity,
+        height: double.infinity,
+        radius: 0,
+      ),
+      error: (_, __) => RoundedImage(
+        imageUrl: null,
+        width: double.infinity,
+        height: double.infinity,
+        radius: 0,
       ),
     );
   }

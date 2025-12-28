@@ -48,7 +48,7 @@ class EditSceneScreen extends HookConsumerWidget {
         final api = ref.read(backendApiProvider);
         await api.regenerateScene(
           bookId: bookId,
-          sceneOrder: sceneIndex + 1,
+          sceneOrder: sceneIndex, // Индексация начинается с 0 (обложка)
           instruction: instructionController.text.trim(),
         );
 

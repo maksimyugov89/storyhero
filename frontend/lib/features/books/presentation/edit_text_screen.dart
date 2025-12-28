@@ -48,7 +48,7 @@ class EditTextScreen extends HookConsumerWidget {
         final api = ref.read(backendApiProvider);
         await api.updateText(
           bookId: bookId,
-          sceneIndex: sceneIndex + 1,
+          sceneIndex: sceneIndex, // Индексация начинается с 0 (обложка)
           instruction: instructionController.text.trim(),
         );
 

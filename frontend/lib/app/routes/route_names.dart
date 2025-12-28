@@ -28,6 +28,7 @@ class RouteNames {
   
   static const String settings = '/app/settings';
   static const String help = '/app/settings/help';
+  static const String supportMessageDetail = '/app/settings/help/message/:id';
   static const String subscription = '/app/settings/subscription';
   static const String payment = '/app/payment/:bookId';
 }

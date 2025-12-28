@@ -1,17 +1,22 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../../core/api/backend_api.dart';
 import '../../../core/presentation/layouts/app_page.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
 import '../../../core/utils/text_style_helpers.dart';
 import '../../../core/presentation/widgets/cards/app_magic_card.dart';
-import '../../../core/presentation/widgets/buttons/app_button.dart';
+import '../../../core/presentation/widgets/buttons/app_magic_button.dart';
 import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../ui/components/asset_icon.dart';
+import '../data/support_messages_provider.dart';
+import '../../../core/models/support_message.dart';
+import '../../../app/routes/route_names.dart';
+import 'package:intl/intl.dart';
 
 class HelpScreen extends ConsumerStatefulWidget {
   const HelpScreen({super.key});
@@ -28,14 +33,48 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
   
   bool _isLoading = false;
   String _selectedType = 'suggestion'; // suggestion, bug, question
+  Timer? _pollingTimer;
+  bool _isDisposed = false;
 
-  static const String _developerEmail = 'maksim.yugov.89@gmail.com';
-  static const String _telegramUsername = 'Satir45';
+  // Интервал обновления сообщений (каждые 5 секунд)
+  static const Duration _pollingInterval = Duration(seconds: 5);
 
   @override
   void initState() {
     super.initState();
     _loadUserEmail();
+    _startPolling();
+  }
+
+  void _startPolling() {
+    if (_isDisposed) return;
+    
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(_pollingInterval, (timer) {
+      if (_isDisposed || !mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      // Обновляем список сообщений
+      ref.invalidate(supportMessagesProvider);
+    });
+  }
+
+  void _stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Обновляем данные при возврате на экран
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_isDisposed) {
+        ref.invalidate(supportMessagesProvider);
+      }
+    });
   }
 
   Future<void> _loadUserEmail() async {
@@ -54,6 +93,8 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
 
   @override
   void dispose() {
+    _isDisposed = true;
+    _stopPolling();
     _nameController.dispose();
     _emailController.dispose();
     _messageController.dispose();
@@ -72,15 +113,15 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
     }
   }
 
-  String get _emailSubject {
+  String _getMessageHint() {
     switch (_selectedType) {
       case 'bug':
-        return '[StoryHero] Сообщение об ошибке';
+        return 'Опишите кратко вашу проблему';
       case 'question':
-        return '[StoryHero] Вопрос';
+        return 'Опишите ваш вопрос';
       case 'suggestion':
       default:
-        return '[StoryHero] Пожелание';
+        return 'Введите ваши пожелания, они очень важны для нас';
     }
   }
 
@@ -94,58 +135,89 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
       final email = _emailController.text.trim();
       final message = _messageController.text.trim();
       
-      final body = '''
-Имя: $name
-Email: $email
-Тип: $_messageTypeLabel
-
-Сообщение:
-$message
-
----
-Отправлено из приложения StoryHero
-''';
-
-      final Uri emailUri = Uri(
-        scheme: 'mailto',
-        path: _developerEmail,
-        query: _encodeQueryParameters({
-          'subject': _emailSubject,
-          'body': body,
-        }),
+      final api = ref.read(backendApiProvider);
+      
+      // Отправляем сообщение через API (бэкенд отправит на почту и в телеграм)
+      await api.sendSupportMessage(
+        name: name,
+        email: email,
+        type: _selectedType,
+        message: message,
       );
-
-      if (await canLaunchUrl(emailUri)) {
-        await launchUrl(emailUri);
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
+      
+      // Обновляем список сообщений
+      ref.invalidate(supportMessagesProvider);
+      
+      if (mounted) {
+        // Показываем успешное сообщение
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 28),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: const Text('Сообщение отправлено!'),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.check_circle, color: Colors.white),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text('Письмо готово к отправке!'),
+                  Text(
+                    'Спасибо за обращение!',
+                    style: AppTypography.headlineSmall,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Ваше сообщение отправлено на почту и в Telegram. Мы свяжемся с вами в ближайшее время.',
+                    style: AppTypography.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceVariant.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('👤 Имя: $name'),
+                        Text('📧 Email: $email'),
+                        Text('📝 Тип: $_messageTypeLabel'),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
             ),
-          );
-        }
-      } else {
-        // Если почтовый клиент не доступен, показываем email для копирования
-        if (mounted) {
-          _showEmailFallbackDialog(body);
-        }
+            actions: [
+              AppMagicButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  // Очищаем форму
+                  _nameController.clear();
+                  _messageController.clear();
+                  _selectedType = 'suggestion';
+                  setState(() {});
+                },
+                child: const Text('Закрыть'),
+              ),
+            ],
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка: ${e.toString()}'),
+            content: Text('Ошибка отправки: ${e.toString().replaceAll('Exception: ', '')}'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -157,142 +229,36 @@ $message
     }
   }
 
-  String _encodeQueryParameters(Map<String, String> params) {
-    return params.entries
-        .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
-        .join('&');
-  }
 
-  void _showEmailFallbackDialog(String body) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Отправить вручную'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Почтовый клиент не найден. Отправьте письмо вручную на:',
-              style: AppTypography.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SelectableText(
-                _developerEmail,
-                style: safeCopyWith(
-                  AppTypography.bodyLarge,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Закрыть'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openTelegram() async {
-    // Пробуем открыть Telegram напрямую
-    final Uri telegramAppUri = Uri.parse('tg://resolve?domain=$_telegramUsername');
-    final Uri telegramWebUri = Uri.parse('https://t.me/$_telegramUsername');
-    
-    try {
-      // Сначала пробуем открыть через приложение Telegram
-      if (await canLaunchUrl(telegramAppUri)) {
-        await launchUrl(telegramAppUri);
-      } else if (await canLaunchUrl(telegramWebUri)) {
-        // Если приложение не установлено, открываем веб-версию
-        await launchUrl(
-          telegramWebUri,
-          mode: LaunchMode.externalApplication,
-        );
-      } else {
-        // Если ничего не работает, показываем диалог
-        if (mounted) {
-          _showTelegramFallbackDialog();
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Не удалось открыть Telegram: ${e.toString()}'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
+  String _getTypeLabel(String type) {
+    switch (type) {
+      case 'bug':
+        return 'Ошибка';
+      case 'question':
+        return 'Вопрос';
+      case 'suggestion':
+      default:
+        return 'Пожелание';
     }
   }
 
-  void _showTelegramFallbackDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Telegram'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Не удалось открыть Telegram. Найдите нас вручную:',
-              style: AppTypography.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0088CC).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: const Color(0xFF0088CC).withOpacity(0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.send,
-                    color: Color(0xFF0088CC),
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  SelectableText(
-                    '@$_telegramUsername',
-                    style: safeCopyWith(
-                      AppTypography.bodyLarge,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF0088CC),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Закрыть'),
-          ),
-        ],
-      ),
-    );
+  String _getStatusLabel(String status) {
+    switch (status) {
+      case 'new':
+        return 'Новое';
+      case 'answered':
+        return 'Отвечено';
+      case 'closed':
+        return 'Закрыто';
+      default:
+        return status;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final messagesAsync = ref.watch(supportMessagesProvider);
+
     return AppPage(
       backgroundImage: 'assets/logo/storyhero_bg_main.png',
       overlayOpacity: 0.2,
@@ -344,6 +310,35 @@ $message
                       ),
                     ],
                   ),
+                ),
+
+                const SizedBox(height: AppSpacing.lg),
+
+                // Список отправленных сообщений
+                messagesAsync.when(
+                  data: (messages) {
+                    if (messages.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Мои сообщения',
+                          style: safeCopyWith(
+                            AppTypography.headlineSmall,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        ...messages.map((message) => _buildMessageCard(message)),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
+                    );
+                  },
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
                 ),
                 
                 const SizedBox(height: AppSpacing.lg),
@@ -466,7 +461,7 @@ $message
                         maxLines: 5,
                         maxLength: 1000,
                         decoration: InputDecoration(
-                          hintText: 'Опишите вашу проблему, пожелание или вопрос...',
+                          hintText: _getMessageHint(),
                           alignLabelWithHint: true,
                           filled: true,
                           fillColor: AppColors.surface.withOpacity(0.5),
@@ -499,116 +494,22 @@ $message
                 
                 const SizedBox(height: AppSpacing.lg),
                 
-                // Кнопка отправки email
-                AppButton(
-                  text: _isLoading ? 'Отправка...' : '✉️ Отправить на Email',
+                // Кнопка отправки сообщения (на почту и в телеграм)
+                AppMagicButton(
                   onPressed: _isLoading ? null : _sendMessage,
+                  isLoading: _isLoading,
                   fullWidth: true,
-                  backgroundColor: AppColors.primary,
-                ),
-                
-                const SizedBox(height: AppSpacing.lg),
-                
-                // Разделитель "или"
-                Row(
-                  children: [
-                    Expanded(
-                      child: Divider(
-                        color: AppColors.onSurfaceVariant.withOpacity(0.3),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'или',
-                        style: safeCopyWith(
-                          AppTypography.bodyMedium,
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Divider(
-                        color: AppColors.onSurfaceVariant.withOpacity(0.3),
-                      ),
-                    ),
-                  ],
-                ),
-                
-                const SizedBox(height: AppSpacing.lg),
-                
-                // Telegram карточка
-                AppMagicCard(
-                  padding: AppSpacing.paddingMD,
-                  child: Column(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  const Color(0xFF0088CC),
-                                  const Color(0xFF00A0E0),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.send,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Telegram',
-                                  style: safeCopyWith(
-                                    AppTypography.headlineSmall,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Text(
-                                  'Быстрый ответ в мессенджере',
-                                  style: safeCopyWith(
-                                    AppTypography.bodySmall,
-                                    color: AppColors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _openTelegram,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0088CC),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.send, size: 20),
-                          label: const Text(
-                            'Написать @Satir45',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                      Icon(Icons.send, color: Colors.white, size: 24),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        _isLoading ? 'Отправка...' : '📧 Отправить на Email и Telegram',
+                        style: safeCopyWith(
+                          AppTypography.labelLarge,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ],
@@ -634,7 +535,7 @@ $message
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
                         child: Text(
-                          'Email откроется в почтовом клиенте, Telegram — в приложении',
+                          'Сообщение будет отправлено на почту и в Telegram разработчику',
                           style: safeCopyWith(
                             AppTypography.bodySmall,
                             color: AppColors.onSurfaceVariant,
@@ -721,6 +622,200 @@ $message
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteMessage(String messageId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: AppColors.error, size: 28),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('Удалить сообщение?'),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Вы уверены, что хотите удалить это сообщение? Это действие нельзя отменить.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.error,
+            ),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final api = ref.read(backendApiProvider);
+      await api.deleteSupportMessage(messageId);
+      
+      if (mounted) {
+        // Обновляем список сообщений
+        ref.invalidate(supportMessagesProvider);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Сообщение удалено'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка удаления: ${e.toString().replaceAll('Exception: ', '')}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildMessageCard(SupportMessage message) {
+    final isClosed = message.status == 'closed';
+    
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: AppMagicCard(
+        padding: AppSpacing.paddingMD,
+        onTap: () {
+          context.push(RouteNames.supportMessageDetail.replaceAll(':id', message.id));
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _getTypeLabel(message.type),
+                    style: safeCopyWith(
+                      AppTypography.labelMedium,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                if (message.hasUnreadReplies)
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                const SizedBox(width: AppSpacing.sm),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _getStatusLabel(message.status),
+                    style: AppTypography.labelSmall,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              message.message,
+              style: AppTypography.bodyMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Text(
+                  DateFormat('dd.MM.yyyy HH:mm').format(message.createdAt),
+                  style: safeCopyWith(
+                    AppTypography.bodySmall,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+                if (message.repliesCount > 0) ...[
+                  const SizedBox(width: AppSpacing.md),
+                  Text(
+                    '• ${message.repliesCount} ${message.repliesCount == 1 ? 'ответ' : message.repliesCount < 5 ? 'ответа' : 'ответов'}',
+                    style: safeCopyWith(
+                      AppTypography.bodySmall,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            // Кнопка удаления для закрытых диалогов
+            if (isClosed) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _deleteMessage(message.id),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.error.withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.delete_outline,
+                            color: AppColors.error,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Удалить',
+                            style: safeCopyWith(
+                              AppTypography.labelSmall,
+                              color: AppColors.error,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
