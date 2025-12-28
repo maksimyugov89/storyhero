@@ -58,6 +58,18 @@ else:
     else:
         print("✓ SECRET_KEY установлен")
 
+    # ЗАКОММЕНТИРОВАНО - перешли на Pollinations.ai (не требует API ключа)
+    # if not os.getenv("FAL_API_KEY"):
+    #     print("⚠ ВНИМАНИЕ: FAL_API_KEY не установлен! Генерация изображений не будет работать")
+    # else:
+    #     print("✓ FAL_API_KEY установлен")
+    print("✓ Используется Pollinations.ai для генерации изображений (API ключ не требуется)")
+    
+    if not os.getenv("GEMINI_API_KEY"):
+        print("⚠ ВНИМАНИЕ: GEMINI_API_KEY не установлен! Генерация текста не будет работать")
+    else:
+        print("✓ GEMINI_API_KEY установлен")
+
 # Теперь импортируем модули, которые используют переменные окружения
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,7 +78,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from .db import get_db, init_db
-from .services.local_file_service import BASE_UPLOAD_DIR
+from .services.storage import BASE_UPLOAD_DIR
 from .services.cleanup_service import cleanup_old_drafts
 from .services.subscription_service import check_expired_subscriptions
 from .routers import (
@@ -87,6 +99,8 @@ from .routers import (
     payments,
     orders,
     subscription,
+    support,
+    test_notifications,
 )
 
 app = FastAPI(
@@ -112,6 +126,7 @@ try:
     os.makedirs(BASE_UPLOAD_DIR, exist_ok=True)
     os.makedirs(os.path.join(BASE_UPLOAD_DIR, "children"), exist_ok=True)
     os.makedirs(os.path.join(BASE_UPLOAD_DIR, "general"), exist_ok=True)
+    os.makedirs(os.path.join(BASE_UPLOAD_DIR, "faces"), exist_ok=True)  # Для face profile reference изображений
     
     app.mount("/static", StaticFiles(directory=BASE_UPLOAD_DIR), name="static")
     logger.info(f"✓ Статическая раздача файлов настроена: {BASE_UPLOAD_DIR}")
@@ -140,6 +155,8 @@ app.include_router(upload.router)
 app.include_router(payments.router)
 app.include_router(orders.router)
 app.include_router(subscription.router)
+app.include_router(support.router)  # Сообщения поддержки
+app.include_router(test_notifications.router)  # Тестовые эндпоинты
 
 # -----------------------------------------------------------------------------
 # BACKWARD/FRONTEND COMPAT: /api/v1 prefix
@@ -168,6 +185,8 @@ app.include_router(upload.router, prefix=API_V1_PREFIX)
 app.include_router(payments.router, prefix=API_V1_PREFIX)
 app.include_router(orders.router, prefix=API_V1_PREFIX)
 app.include_router(subscription.router, prefix=API_V1_PREFIX)
+app.include_router(support.router, prefix=API_V1_PREFIX)  # Сообщения поддержки
+app.include_router(test_notifications.router, prefix=API_V1_PREFIX)  # Тестовые эндпоинты
 
 # Инициализируем БД при запуске
 @app.on_event("startup")
@@ -187,6 +206,7 @@ async def startup_event():
         os.makedirs(BASE_UPLOAD_DIR, exist_ok=True)
         os.makedirs(os.path.join(BASE_UPLOAD_DIR, "children"), exist_ok=True)
         os.makedirs(os.path.join(BASE_UPLOAD_DIR, "general"), exist_ok=True)
+        os.makedirs(os.path.join(BASE_UPLOAD_DIR, "faces"), exist_ok=True)  # Для face profile reference изображений
         logger.info(f"✓ Директории для локального хранения файлов готовы: {BASE_UPLOAD_DIR}")
     except Exception as e:
         logger.error(f"✗ Ошибка при создании директорий для хранения файлов: {str(e)}")

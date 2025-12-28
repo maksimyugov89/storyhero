@@ -6,7 +6,7 @@ import json
 
 from ..db import get_db
 from ..models import Book, Child, Scene, ThemeStyle
-from ..services.deepseek_service import generate_text
+from ..services.gemini_service import generate_text
 from ..core.deps import get_current_user
 from ..config.styles import ALL_STYLES, normalize_style, is_style_known
 
@@ -131,7 +131,7 @@ educational, retro, pop_art.
 
 Подбери визуальный стиль для иллюстраций этой книги."""
             
-            # Вызываем DeepSeek API
+            # Вызываем Gemini API
             gpt_response = await generate_text(user_prompt, system_prompt, json_mode=True)
             
             # Проверяем, что ответ не пустой

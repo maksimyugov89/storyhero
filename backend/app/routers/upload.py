@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from pydantic import BaseModel
 
-from ..services.local_file_service import upload_general_file
+from ..services.storage import upload_general_file
 from ..core.deps import get_current_user
 
 logger = logging.getLogger(__name__)

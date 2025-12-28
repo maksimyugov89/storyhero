@@ -18,11 +18,11 @@ from pydantic import BaseModel
 
 from ..db import get_db
 from ..models import Book, Scene, Image, TextVersion, ImageVersion
-from ..services.deepseek_service import generate_text
+from ..services.gemini_service import generate_text
 from ..services.image_pipeline import generate_draft_image
 from ..services.watermark_service import create_preview_image
-from ..services.local_file_service import upload_image_bytes
-from ..services.local_file_service import BASE_UPLOAD_DIR, get_server_base_url
+from ..services.storage import upload_image as upload_image_bytes
+from ..services.storage import BASE_UPLOAD_DIR, get_server_base_url
 from ..services.pdf_service import PdfPage, render_book_pdf
 from ..services.tasks import create_task, update_task_progress
 from ..core.deps import get_current_user
@@ -863,31 +863,48 @@ def finalize_render(
                 "total_steps": 1,
                 "message": "Сборка PDF...",
                 "pages_rendered": 0,
-                "total_pages": len(scenes),
+                "total_pages": len([s for s in scenes if s.order > 0]),  # Исключаем обложку (order=0)
                 "book_id": str(book_id)
             })
 
-        # Собираем страницы
+        # Получаем ребёнка для возраста
+        from ..models import Child
+        child = db.query(Child).filter(Child.id == book.child_id).first()
+        child_age = child.age if child else None
+        
+        # Собираем страницы (сортируем по order, чтобы обложка order=0 была первой)
         pages: list[PdfPage] = []
-        for idx, scene in enumerate(scenes, 1):
+        # Сортируем сцены по order, чтобы обложка (order=0) была первой
+        sorted_scenes = sorted(scenes, key=lambda s: s.order)
+        for idx, scene in enumerate(sorted_scenes, 1):
             image = _get_image_by_scene_id(book_id, scene.id, db)
             image_url = None
             if image:
                 image_url = image.final_url or image.draft_url
-            pages.append(PdfPage(order=scene.order, text=scene.text or "", image_url=image_url))
+            pages.append(PdfPage(
+                order=scene.order,
+                text=scene.text or "",
+                image_url=image_url,
+                age=child_age
+            ))
 
             if task_id:
                 update_task_progress(task_id, {
                     "pages_rendered": idx - 1,
-                    "message": f"Подготовка страницы {idx}/{len(scenes)}..."
+                    "message": f"Подготовка страницы {idx}/{len(sorted_scenes)}..."
                 })
 
         # Путь на диске
         out_path = Path(BASE_UPLOAD_DIR) / "books" / str(book_id) / "final.pdf"
 
+        # Получаем стиль книги
+        from ..models import ThemeStyle
+        theme_style = db.query(ThemeStyle).filter(ThemeStyle.book_id == book_id).first()
+        book_style = theme_style.final_style if theme_style else (book.style or "storybook")
+
         # Генерация PDF (CPU/IO) — в отдельном потоке
         import asyncio
-        await asyncio.to_thread(render_book_pdf, out_path, book.title or "StoryHero", pages)
+        await asyncio.to_thread(render_book_pdf, out_path, book.title or "StoryHero", pages, book_style, child_age)
 
         # Публичный URL
         base = get_server_base_url()
@@ -903,7 +920,7 @@ def finalize_render(
                 "stage": "pdf_ready",
                 "message": "PDF готов ✓",
                 "pages_rendered": len(scenes),
-                "total_pages": len(scenes),
+                "total_pages": len([s for s in scenes if s.order > 0]),  # Исключаем обложку (order=0)
                 "pdf_url": pdf_url
             })
 

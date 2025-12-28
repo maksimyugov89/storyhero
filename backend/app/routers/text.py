@@ -6,7 +6,7 @@ import json
 
 from ..db import get_db
 from ..models import Child, Book, Scene
-from ..services.deepseek_service import generate_text
+from ..services.gemini_service import generate_text
 from ..core.deps import get_current_user
 
 router = APIRouter(prefix="", tags=["text"])
@@ -68,6 +68,7 @@ async def _create_text_internal(
         child_profile = {
             "name": child.name,
             "age": child.age,
+            "gender": child.gender or "male",  # Пол ребенка для правильной генерации текста
             "interests": child.interests or [],
             "fears": child.fears or [],
             "personality": child.personality or "",
@@ -102,10 +103,10 @@ async def _create_text_internal(
   ]
 }}"""
         
-        # Вызываем DeepSeek API
-        logger.info(f"📝 _create_text_internal: Вызов DeepSeek API для book_id={request.book_id}")
+        # Вызываем Gemini API
+        logger.info(f"📝 _create_text_internal: Вызов Gemini API для book_id={request.book_id}")
         gpt_response = await generate_text(user_prompt, system_prompt, json_mode=True)
-        logger.info(f"📝 _create_text_internal: DeepSeek API вернул ответ (длина: {len(gpt_response) if gpt_response else 0})")
+        logger.info(f"📝 _create_text_internal: Gemini API вернул ответ (длина: {len(gpt_response) if gpt_response else 0})")
         
         # Проверяем, что ответ не пустой
         if not gpt_response or not gpt_response.strip():

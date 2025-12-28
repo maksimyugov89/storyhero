@@ -17,7 +17,7 @@ Base = declarative_base()
 # чтобы SQLAlchemy мог правильно разрешить все relationship
 def import_all_models():
     """Импортирует все модели для правильной регистрации relationship"""
-    from .models import Book, Scene, Child, Image, ThemeStyle, User, PrintOrder, Subscription  # noqa: F401
+    from .models import Book, Scene, Child, Image, ThemeStyle, User, PrintOrder, Subscription, ChildFaceProfile  # noqa: F401
 
 
 def get_db():

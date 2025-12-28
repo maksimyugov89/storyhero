@@ -1,131 +1,63 @@
 import os
-import requests
 from fastapi import HTTPException
+import requests
 
 
-def call_gpt(prompt: str, system_prompt: str = None, model: str = "google/gemini-2.0-flash-001") -> str:
+def call_gpt(prompt: str, system_prompt: str = None, model: str = None) -> str:
     """
-    Вызывает OpenRouter API и возвращает ответ.
-    Использует fallback механику: при ошибке 5xx или наличии "error" в JSON
-    автоматически переключается на резервную модель.
+    Сервис для работы с LLM через Gemini.
+    Теперь вызывает Gemini API напрямую и возвращает текст.
     
     Args:
         prompt: Пользовательский промпт
         system_prompt: Системный промпт (опционально)
-        model: Модель для использования (по умолчанию google/gemini-2.0-flash-001)
+        model: Имя модели Gemini (если не указано, берётся из GEMINI_MODEL или дефолт)
     
     Returns:
-        Ответ от OpenRouter API
+        Ответ от Gemini API (text)
     """
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("OPENROUTER_API_KEY не установлен в переменных окружения")
+        raise ValueError("GEMINI_API_KEY не установлен в переменных окружения")
     
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    model_name = model or os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "http://storyhero.app",
-        "X-Title": "StoryHero"
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.8, "maxOutputTokens": 4096},
     }
+    if system_prompt:
+        payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
     
-    # Функция для выполнения запроса
-    def make_request(model_name: str):
-        payload = {
-            "model": model_name,
-            "messages": messages,
-            "temperature": 0.8,
-            "max_tokens": 4096
-        }
-        
-        response = requests.post(url, headers=headers, json=payload, timeout=180)
-        
-        # Проверяем статус код
-        if response.status_code >= 500:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Ошибка OpenRouter API (5xx): {response.text}"
-            )
-        
-        # Парсим JSON ответ
-        try:
-            result = response.json()
-        except ValueError as e:
-            # Если ответ пустой или не JSON
-            response_text = response.text if hasattr(response, 'text') else str(response.content)
-            if not response_text or not response_text.strip():
-                raise HTTPException(
-                    status_code=500,
-                    detail="Fallback модель вернула пустой ответ"
-                )
-            raise HTTPException(
-                status_code=500,
-                detail=f"Не удалось распарсить JSON ответ: {response_text[:200]}"
-            )
-        except Exception as e:
-            response_text = response.text if hasattr(response, 'text') else str(response.content)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Ошибка при парсинге ответа API: {str(e)}. Ответ: {response_text[:200]}"
-            )
-        
-        # Проверяем наличие ошибки в JSON
-        if "error" in result:
-            error_detail = result.get("error", {}).get("message", str(result.get("error")))
-            raise HTTPException(
-                status_code=response.status_code if response.status_code != 200 else 500,
-                detail=f"Ошибка в ответе API: {error_detail}"
-            )
-        
-        # Проверяем наличие choices
-        if "choices" not in result or not result["choices"]:
-            raise HTTPException(
-                status_code=500,
-                detail="Ответ API не содержит choices"
-            )
-        
-        # Получаем контент ответа
-        content = result["choices"][0]["message"]["content"]
-        
-        # Проверяем, что контент не пустой
-        if not content or not content.strip():
-            raise HTTPException(
-                status_code=500,
-                detail="Ответ API пустой"
-            )
-        
-        return content
-    
-    # Пытаемся использовать основную модель
     try:
-        return make_request(model)
-    except HTTPException as e:
-        # Если ошибка 5xx или есть error в JSON, пробуем fallback
-        fallback_model = "google/gemini-2.0-flash-lite-preview-02-05"
-        
-        try:
-            return make_request(fallback_model)
-        except HTTPException as fallback_error:
-            # Если fallback тоже упал, кидаем общую ошибку
-            raise HTTPException(
-                status_code=500,
-                detail=f"LLM failed (primary + fallback). Primary error: {str(e.detail)}, Fallback error: {str(fallback_error.detail)}"
-            )
+        resp = requests.post(url, params={"key": api_key}, json=payload, timeout=180)
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Timeout при вызове Gemini API")
     except requests.exceptions.RequestException as e:
-        # Если сетевой запрос упал, пробуем fallback
-        fallback_model = "google/gemini-2.0-flash-lite-preview-02-05"
-        
+        raise HTTPException(status_code=503, detail=f"Ошибка соединения с Gemini API: {str(e)}")
+
+    if resp.status_code != 200:
         try:
-            return make_request(fallback_model)
-        except Exception as fallback_error:
-            raise HTTPException(
-                status_code=500,
-                detail=f"LLM failed (primary + fallback). Primary error: {str(e)}, Fallback error: {str(fallback_error)}"
-            )
+            err = resp.json()
+            msg = err.get("error", {}).get("message") or str(err)
+        except Exception:
+            msg = resp.text[:400]
+        raise HTTPException(status_code=resp.status_code, detail=f"Ошибка Gemini API: {msg}")
+
+    try:
+        data = resp.json()
+    except Exception:
+        raise HTTPException(status_code=500, detail="Gemini API вернул не-JSON ответ")
+
+    # Извлекаем текст
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise HTTPException(status_code=500, detail="Gemini API вернул пустой ответ (нет candidates)")
+    content = (candidates[0] or {}).get("content") or {}
+    parts = content.get("parts") or []
+    text = "".join([p.get("text", "") for p in parts if isinstance(p, dict)]).strip()
+    if not text:
+        raise HTTPException(status_code=500, detail="Gemini API вернул пустой текст")
+    return text
 

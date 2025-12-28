@@ -1,13 +1,21 @@
+"""
+Роутер для генерации сюжета книги через Gemini API.
+"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import Optional, List, Dict, Any
 import json
+import logging
+import uuid
 
 from ..db import get_db
 from ..models import Child, Book, Scene
-from ..services.deepseek_service import generate_text
+from ..services.gemini_service import generate_text
+from ..services.tasks import update_task_progress
 from ..core.deps import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["plot"])
 
@@ -15,34 +23,47 @@ router = APIRouter(prefix="", tags=["plot"])
 class CreatePlotRequest(BaseModel):
     child_id: int
     num_pages: int = 20  # 10 или 20 страниц (сцен) без обложки
-
-
-class SceneResponse(BaseModel):
-    order: int
-    short_summary: str
+    theme: Optional[str] = None  # Тема книги (о чём будет книга)
 
 
 class CreatePlotResponse(BaseModel):
-    book_id: str  # UUID как строка для JSON
-    scenes: List[SceneResponse]
+    book_id: str  # UUID как строка
+    title: str
+    scenes: List[Dict[str, Any]]
 
 
 async def _create_plot_internal(
     request: CreatePlotRequest,
     db: Session,
-    user_id: str
+    user_id: str,
+    task_id: Optional[str] = None  # Добавляем task_id для обновления progress
 ) -> CreatePlotResponse:
     """
-    Внутренняя функция для создания сюжета книги.
+    Внутренняя функция для генерации сюжета.
     Принимает user_id напрямую, без Depends().
     """
     try:
-        # Получаем профиль ребёнка из БД
+        logger.info(f"📖 _create_plot_internal: Начало для child_id={request.child_id}, num_pages={request.num_pages}, theme={request.theme}")
+        
+        # Получаем профиль ребёнка
         child = db.query(Child).filter(Child.id == request.child_id).first()
         if not child:
             raise HTTPException(status_code=404, detail=f"Ребёнок с id={request.child_id} не найден")
         
-        # Подготавливаем профиль для промпта
+        # Проверяем права доступа
+        if child.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Доступ запрещен: ребёнок не принадлежит вам")
+        
+        # Валидация num_pages
+        if request.num_pages not in (10, 20):
+            raise HTTPException(
+                status_code=400,
+                detail="Количество страниц должно быть 10 или 20"
+            )
+        
+        num_scenes = request.num_pages
+        
+        # Подготавливаем профиль ребёнка для промпта
         child_profile = {
             "name": child.name,
             "age": child.age,
@@ -53,16 +74,15 @@ async def _create_plot_internal(
             "profile_json": child.profile_json or {}
         }
         
-        # Формируем промпты для GPT
-        system_prompt = """Ты — профессиональный детский писатель. Создаёшь уникальные сюжеты, которые никогда не повторяются."""
+        # Формируем промпт с учётом темы книги
+        theme_text = ""
+        if request.theme and request.theme.strip():
+            theme_text = f"\n\nТЕМА КНИГИ (обязательно использовать): {request.theme.strip()}\nКнига должна быть именно об этом событии, ситуации или приключении."
         
-        # Валидация количества страниц (синхронизация с фронтендом)
-        if request.num_pages not in (10, 20):
-            raise HTTPException(status_code=400, detail="Количество страниц должно быть 10 или 20")
-
-        num_scenes = request.num_pages  # Количество сцен = количество страниц
+        system_prompt = """Ты — детский писатель. Создавай уникальные, захватывающие сюжеты для детских книг.
+Верни результат ТОЛЬКО в формате JSON, без дополнительного текста."""
         
-        user_prompt = f"""Профиль ребёнка: {json.dumps(child_profile, ensure_ascii=False)}
+        user_prompt = f"""Профиль ребёнка: {json.dumps(child_profile, ensure_ascii=False)}{theme_text}
 
 Сгенерируй уникальный сюжет книги.
 
@@ -70,27 +90,31 @@ async def _create_plot_internal(
 Обложка генерируется отдельно и НЕ входит в это число.
 Итого в книге будет: 1 обложка + {num_scenes} страниц = {num_scenes + 1} страниц всего.
 
-Формат ответа строго в JSON:
+Формат JSON:
 {{
-  "title": "...",
-  "theme": "...",
-  "moral": "...",
+  "title": "Название книги",
   "scenes": [
     {{
       "order": 1,
-      "short_summary": "..."
+      "short_summary": "Краткое описание сцены (1-2 предложения)"
     }},
-    ...
+    {{
+      "order": 2,
+      "short_summary": "..."
+    }}
   ]
 }}
 
 Количество сцен в массиве "scenes" должно быть РОВНО {num_scenes}."""
         
-        # Вызываем DeepSeek API
+        # Вызываем Gemini API
+        logger.info(f"📖 _create_plot_internal: Вызов Gemini API для child_id={request.child_id}")
         gpt_response = await generate_text(user_prompt, system_prompt, json_mode=True)
+        logger.info(f"📖 _create_plot_internal: Gemini API вернул ответ (длина: {len(gpt_response) if gpt_response else 0})")
         
         # Проверяем, что ответ не пустой
         if not gpt_response or not gpt_response.strip():
+            logger.error(f"❌ _create_plot_internal: GPT вернул пустой ответ для child_id={request.child_id}")
             raise ValueError("GPT вернул пустой ответ")
         
         # Парсим JSON ответ
@@ -108,54 +132,100 @@ async def _create_plot_internal(
             else:
                 raise ValueError(f"Не удалось найти JSON в ответе GPT. Ответ: {gpt_response[:200]}")
         
-        # Создаем запись Book в БД
+        # Валидация структуры ответа
+        if "title" not in plot_data:
+            raise ValueError("GPT не вернул название книги")
+        
+        if "scenes" not in plot_data or not isinstance(plot_data["scenes"], list):
+            raise ValueError("GPT не вернул массив сцен")
+        
+        scenes_list = plot_data["scenes"]
+        if len(scenes_list) != num_scenes:
+            logger.warning(f"⚠️ _create_plot_internal: GPT вернул {len(scenes_list)} сцен вместо {num_scenes}")
+        
+        # Создаём книгу
+        book_id = uuid.uuid4()
         book = Book(
             child_id=request.child_id,
             user_id=user_id,
             title=plot_data.get("title", "Без названия"),
-            theme=plot_data.get("theme", ""),
+            theme=request.theme.strip() if request.theme and request.theme.strip() else None,
             status="draft"
         )
-        # Сохраняем plot_data в variables_used (JSONB поле) для хранения всей информации о сюжете
+        book.id = book_id
         book.variables_used = plot_data
         
         db.add(book)
         db.flush()  # Получаем book.id
         
-        # Создаем записи Scene
-        scenes_data = plot_data.get("scenes", [])
-        scene_objects = []
-        for scene_data in scenes_data:
+        # КРИТИЧЕСКИ ВАЖНО: Добавляем book_id в progress СРАЗУ после создания книги в БД
+        # Это позволяет фронтенду перейти к книге максимально рано
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "book_created",
+                "current_step": 2,
+                "total_steps": 7,
+                "message": "Книга создана! Генерация сюжета...",
+                "book_id": str(book_id)  # Преобразуем в строку для JSON
+            })
+            logger.info(f"✅ book_id добавлен в progress задачи {task_id} сразу после создания книги: {book_id}")
+        
+        # Создаём обложку (Scene с order=0)
+        cover_scene = Scene(
+            book_id=book_id,
+            order=0,  # Обложка всегда имеет order=0
+            short_summary=f"Обложка книги: {book.title}",
+            text=f"Обложка книги '{book.title}'",
+            image_prompt=f"Красивая обложка детской книги с названием '{book.title}'. Тема: {request.theme.strip() if request.theme and request.theme.strip() else 'Детская книга'}. Обложка должна быть яркой, привлекательной, с крупным названием книги в центре. Дизайн должен отражать тему книги и быть подходящим для детской аудитории. Используй яркие, насыщенные цвета, дружелюбные персонажи, волшебную атмосферу."
+        )
+        db.add(cover_scene)
+        db.flush()
+        
+        # Создаём сцены
+        created_scenes = [cover_scene]  # Начинаем с обложки
+        for scene_data in scenes_list:
+            order = scene_data.get("order")
+            short_summary = scene_data.get("short_summary", "")
+            
+            if not order:
+                continue
+            
             scene = Scene(
-                book_id=book.id,
-                order=scene_data.get("order", 0),
-                short_summary=scene_data.get("short_summary", "")
+                book_id=book_id,
+                order=order,
+                short_summary=short_summary
             )
             db.add(scene)
-            scene_objects.append(scene)
+            created_scenes.append(scene)
         
         db.commit()
         db.refresh(book)
         
+        logger.info(f"✓ _create_plot_internal: Сюжет создан для child_id={request.child_id}, book_id={book_id}, сцен: {len(created_scenes)}")
+        
         # Формируем ответ
         scenes_response = [
-            SceneResponse(
-                order=scene.order,
-                short_summary=scene.short_summary or ""
-            )
-            for scene in scene_objects
+            {
+                "order": scene.order,
+                "short_summary": scene.short_summary or ""
+            }
+            for scene in created_scenes
         ]
         
         return CreatePlotResponse(
-            book_id=str(book.id),  # Преобразуем UUID в строку
+            book_id=str(book_id),
+            title=book.title,
             scenes=scenes_response
         )
         
     except HTTPException:
         raise
     except ValueError as e:
+        logger.error(f"❌ _create_plot_internal: ValueError для child_id={request.child_id}: {str(e)}")
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"❌ _create_plot_internal: Exception для child_id={request.child_id}: {str(e)}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Ошибка при создании сюжета: {str(e)}")
 
@@ -167,10 +237,9 @@ async def create_plot(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Создает сюжет книги для ребёнка с помощью GPT API.
+    Генерирует сюжет книги с помощью Gemini API.
     """
     user_id = current_user.get("sub") or current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
     return await _create_plot_internal(request, db, user_id)
-

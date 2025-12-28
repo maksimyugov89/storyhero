@@ -1,54 +1,98 @@
 """
-Оркестратор для генерации финальных изображений с face swap
+Сервис для генерации изображений через Pollinations.ai API.
+Обеспечивает единый интерфейс для генерации черновых и финальных изображений.
+Использует Pollinations.ai через pollinations_service.
 """
+import logging
 import os
-import httpx
-from pathlib import Path
+import uuid
 from fastapi import HTTPException
 from typing import Optional, List
-import logging
+
+# ЗАКОММЕНТИРОВАНО - перешли на Pollinations.ai
+# from .fal_service import generate_raw_image
 from .pollinations_service import generate_raw_image
-from .faceswap_service import apply_face_swap, detect_face_in_image
-from .local_file_service import BASE_UPLOAD_DIR, upload_image_bytes
-
-# Максимум попыток перегенерации при отсутствии лица
-MAX_FACE_RETRY_ATTEMPTS = 3
-
-# Суффиксы для усиления промпта при перегенерации
-FACE_ENHANCEMENT_SUFFIXES = [
-    ", child's face clearly visible and centered, frontal view, well-lit portrait, face in sharp focus, looking at viewer",
-    ", IMPORTANT: character facing camera directly, large clear face in center, portrait style, high detail face, eyes looking at viewer, soft lighting on face",
-    ", CRITICAL: extreme close-up portrait of child, face fills frame, hyper-detailed facial features, studio lighting, front-facing, eye contact with viewer, no obstructions"
-]
+from .local_file_service import BASE_UPLOAD_DIR
+from .storage import get_server_base_url
 
 logger = logging.getLogger(__name__)
 
 
-async def generate_draft_image(
-    prompt: str,
-    style: str = "storybook"
-) -> str:
+async def generate_draft_image(prompt: str, style: str = "storybook") -> str:
     """
-    Генерирует черновое изображение без face swap (для скорости).
+    Генерирует черновое изображение через Pollinations.ai API и сохраняет его локально.
     
     Args:
-        prompt: Промпт для генерации изображения (на русском)
-        style: Стиль изображения (для будущего использования)
+        prompt: Промпт для генерации изображения (уже должен содержать стиль)
+        style: Стиль изображения (используется для логирования)
     
     Returns:
-        str: Публичный URL сохраненного изображения
+        str: URL сохраненного изображения
     """
     try:
-        # Генерируем изображение через Pollinations.ai
-        logger.info(f"Генерация чернового изображения через Pollinations.ai для промпта: {prompt[:100]}...")
-        generated_image_bytes = await generate_raw_image(prompt)
-        logger.info(f"✓ Черновое изображение сгенерировано, размер: {len(generated_image_bytes)} байт")
+        logger.info(f"🎨 Генерация чернового изображения через Pollinations.ai для промпта: {prompt[:100]}...")
         
-        # Сохраняем изображение в локальное хранилище
-        import uuid
-        storage_path = f"drafts/{uuid.uuid4()}.jpg"
-        public_url = upload_image_bytes(generated_image_bytes, storage_path, content_type="image/jpeg")
+        # Генерируем изображение через Pollinations.ai API
+        image_bytes = await generate_raw_image(prompt, max_retries=3, is_cover=False)
         
+        if not image_bytes or len(image_bytes) == 0:
+            raise HTTPException(
+                status_code=500,
+                detail="Pollinations.ai вернул пустое изображение"
+            )
+        
+        # КРИТИЧЕСКИ ВАЖНО: Проверяем, что это действительно изображение, а не HTML или другой контент
+        # Проверяем магические байты для JPEG, PNG, WebP
+        is_valid_image = False
+        if len(image_bytes) >= 4:
+            # JPEG: FF D8 FF
+            if image_bytes[:3] == b'\xff\xd8\xff':
+                is_valid_image = True
+            # PNG: 89 50 4E 47
+            elif image_bytes[:4] == b'\x89PNG':
+                is_valid_image = True
+            # WebP: RIFF...WEBP
+            elif image_bytes[:4] == b'RIFF' and b'WEBP' in image_bytes[:20]:
+                is_valid_image = True
+        
+        if not is_valid_image:
+            # Проверяем, не является ли это HTML (часто возвращается при ошибках)
+            if b'<html' in image_bytes[:500].lower() or b'<!doctype' in image_bytes[:500].lower():
+                logger.error(f"❌ Pollinations.ai вернул HTML вместо изображения. Первые 200 байт: {image_bytes[:200]}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Pollinations.ai вернул HTML страницу вместо изображения. Попробуйте позже."
+                )
+            else:
+                logger.error(f"❌ Полученные данные не являются валидным изображением. Первые 20 байт: {image_bytes[:20]}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Pollinations.ai вернул невалидное изображение"
+                )
+        
+        logger.info(f"✓ Черновое изображение сгенерировано через Pollinations.ai, размер: {len(image_bytes)} байт, формат валиден")
+        
+        # Сохраняем изображение локально
+        drafts_dir = os.path.join(BASE_UPLOAD_DIR, "drafts")
+        os.makedirs(drafts_dir, exist_ok=True)
+        
+        # Генерируем уникальное имя файла
+        unique_filename = f"{uuid.uuid4()}.jpg"
+        file_path = os.path.join(drafts_dir, unique_filename)
+        
+        # Сохраняем файл
+        with open(file_path, "wb") as f:
+            f.write(image_bytes)
+        
+        logger.info(f"✓ Изображение сохранено: {file_path}")
+        
+        # Формируем публичный URL
+        base_url = get_server_base_url()
+        # Убираем порт :8000 из URL, так как через Nginx запросы идут без порта
+        if ":8000" in base_url:
+            base_url = base_url.replace(":8000", "")
+        
+        public_url = f"{base_url}/static/drafts/{unique_filename}"
         logger.info(f"✓ Черновое изображение сохранено: {public_url}")
         
         return public_url
@@ -56,179 +100,205 @@ async def generate_draft_image(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"✗ Ошибка в generate_draft_image: {str(e)}", exc_info=True)
+        logger.error(f"❌ Ошибка при генерации чернового изображения: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Ошибка при генерации чернового изображения: {str(e)}"
         )
 
 
-async def _generate_image_with_face_check(
-    prompt: str,
-    attempt: int = 0,
-    needs_face: bool = True
-) -> bytes:
-    """
-    Генерирует изображение и проверяет наличие лица.
-    При отсутствии лица перегенерирует с усиленным промптом (до MAX_FACE_RETRY_ATTEMPTS раз).
-    
-    Args:
-        prompt: Базовый промпт для генерации
-        attempt: Номер текущей попытки (0-based)
-        needs_face: Требуется ли проверка лица (True если будет face swap)
-    
-    Returns:
-        bytes: Сгенерированное изображение
-    """
-    # Модифицируем промпт при повторных попытках
-    if attempt > 0 and attempt <= len(FACE_ENHANCEMENT_SUFFIXES):
-        enhanced_prompt = prompt + FACE_ENHANCEMENT_SUFFIXES[attempt - 1]
-        logger.info(f"🔄 Попытка {attempt + 1}/{MAX_FACE_RETRY_ATTEMPTS}: усиленный промпт для гарантии лица")
-    else:
-        enhanced_prompt = prompt
-    
-    # Генерируем изображение
-    logger.info(f"Генерация изображения через Pollinations.ai (попытка {attempt + 1})...")
-    generated_image_bytes = await generate_raw_image(enhanced_prompt)
-    logger.info(f"✓ Изображение сгенерировано, размер: {len(generated_image_bytes)} байт")
-    
-    # Если не нужна проверка лица - сразу возвращаем
-    if not needs_face:
-        return generated_image_bytes
-    
-    # Проверяем наличие лица
-    face_found = detect_face_in_image(generated_image_bytes)
-    
-    if face_found:
-        logger.info(f"✓ Лицо найдено на изображении (попытка {attempt + 1})")
-        return generated_image_bytes
-    
-    # Лицо не найдено - пробуем перегенерировать
-    if attempt < MAX_FACE_RETRY_ATTEMPTS - 1:
-        logger.warning(f"⚠ Лицо не найдено, перегенерация... (попытка {attempt + 1} из {MAX_FACE_RETRY_ATTEMPTS})")
-        return await _generate_image_with_face_check(prompt, attempt + 1, needs_face)
-    
-    # Все попытки исчерпаны
-    logger.warning(f"⚠ Лицо не найдено после {MAX_FACE_RETRY_ATTEMPTS} попыток, используем последнее изображение")
-    return generated_image_bytes
-
-
 async def generate_final_image(
-    prompt: str,
-    child_photo_path: str = None,
+    prompt: str, 
+    face_url: Optional[str] = None,
+    child_photo_path: Optional[str] = None,
+    child_photo_paths: Optional[List[str]] = None,
     style: str = "storybook",
-    child_photo_paths: Optional[list[str]] = None
+    book_title: Optional[str] = None,  # Название книги для обложки
+    child_id: Optional[int] = None,  # ID ребёнка для использования face profile
+    use_child_face: bool = True  # Использовать face profile если доступен
 ) -> str:
     """
-    Генерирует финальное изображение с возможным face swap.
-    
-    Процесс:
-    1. Генерирует изображение через Pollinations.ai (с авто-перегенерацией при отсутствии лица)
-    2. Если есть child_photo_path, применяет face swap
-    3. Сохраняет результат в локальное хранилище
+    Генерирует финальное изображение через Pollinations.ai API с возможным face swap.
     
     Args:
-        prompt: Промпт для генерации изображения (на русском)
-        child_photo_path: Путь к фото ребёнка на диске (опционально)
-        style: Стиль изображения (для будущего использования)
+        prompt: Промпт для генерации изображения
+        face_url: URL фотографии ребёнка для face swap (опционально)
+        child_photo_path: Путь к файлу фотографии ребёнка для face swap (опционально)
         child_photo_paths: Список путей к фотографиям ребёнка (опционально)
+        style: Стиль изображения
     
     Returns:
-        str: Публичный URL сохраненного изображения
+        str: URL финального изображения
     """
     try:
-        # Определяем, нужен ли face swap (есть ли фото ребёнка)
-        photo_to_use = None
-        available_photos = []
+        logger.info(f"🎨 Генерация финального изображения через Pollinations.ai для промпта: {prompt[:100]}...")
         
-        if child_photo_paths:
-            available_photos = [p for p in child_photo_paths if os.path.exists(p)]
-            if available_photos:
-                photo_to_use = available_photos[0]
-        elif child_photo_path and os.path.exists(child_photo_path):
-            photo_to_use = child_photo_path
-            available_photos = [child_photo_path]
+        # Проверяем наличие face profile и используем img2img если доступен
+        face_profile_used = False
+        face_verification_result = None
         
-        needs_face = photo_to_use is not None
-        
-        # Шаг 1: Генерируем изображение с проверкой лица (если нужен face swap)
-        generated_image_bytes = await _generate_image_with_face_check(
-            prompt=prompt,
-            attempt=0,
-            needs_face=needs_face
-        )
-        
-        # Шаг 2: Если есть фото ребёнка, применяем face swap
-        if photo_to_use:
-            logger.info(f"Применение face swap с фото: {photo_to_use}")
-            logger.info(f"Доступно фотографий: {len(available_photos)}")
-            
-            # Пробуем применить face swap с разными фотографиями
-            face_swap_success = False
-            last_error = None
-            
-            for idx, photo_path in enumerate(available_photos):
+        if use_child_face and child_id:
+            try:
+                from ..models.child_face_profile import ChildFaceProfile
+                from sqlalchemy.orm import Session
+                from ..db import SessionLocal
+                
+                db = SessionLocal()
                 try:
-                    logger.info(f"Попытка face swap с фото {idx + 1}/{len(available_photos)}: {photo_path}")
+                    profile = db.query(ChildFaceProfile).filter(
+                        ChildFaceProfile.child_id == child_id
+                    ).first()
                     
-                    # Читаем фото ребёнка с диска
-                    with open(photo_path, 'rb') as f:
-                        child_photo_bytes = f.read()
-                    
-                    # Применяем face swap
-                    final_image_bytes = apply_face_swap(child_photo_bytes, generated_image_bytes)
-                    logger.info(f"✓ Face swap применён успешно с фото {idx + 1}, размер результата: {len(final_image_bytes)} байт")
-                    face_swap_success = True
-                    break
-                    
-                except HTTPException as e:
-                    last_error = e
-                    # Если лицо не найдено на source фото - пробуем следующее
-                    if "Лицо не найдено на source" in str(e.detail):
-                        logger.warning(f"⚠ Лицо не найдено на фото {idx + 1}, пробуем следующее...")
-                        continue
-                    # Если лицо не найдено на target - это проблема сгенерированного изображения
-                    elif "Лицо не найдено на target" in str(e.detail):
-                        logger.warning(f"⚠ {e.detail}")
-                        break  # Нет смысла пробовать другие фото
-                    # Если face swap недоступен (503) - это КРИТИЧЕСКАЯ ошибка
-                    elif e.status_code == 503:
-                        error_msg = f"КРИТИЧЕСКАЯ ОШИБКА: Face swap недоступен: {e.detail}"
-                        logger.error(f"❌ {error_msg}")
-                        raise HTTPException(
-                            status_code=500,
-                            detail=error_msg + " Пожалуйста, убедитесь, что модель inswapper загружена и доступна."
+                    if profile:
+                        logger.info(f"✓ Найден face profile для child_id={child_id}, используем img2img с верификацией")
+                        
+                        # Формируем публичный URL reference изображения
+                        base_url = get_server_base_url()
+                        if ":8000" in base_url:
+                            base_url = base_url.replace(":8000", "")
+                        reference_image_url = f"{base_url}/static/{profile.reference_image_path}"
+                        
+                        # Определяем, является ли это обложкой
+                        is_cover = "cover" in prompt.lower() and "book" in prompt.lower()
+                        
+                        # Улучшаем промпт для сохранения лица
+                        from .pollinations_img2img_service import build_prompt, generate_with_verification
+                        enhanced_prompt = build_prompt(prompt, strict_identity=True, is_cover=is_cover)
+                        
+                        # Генерируем с верификацией
+                        strength = float(os.getenv("POLLINATIONS_STRENGTH", "0.25"))
+                        max_retries = int(os.getenv("FACE_MAX_RETRIES", "3"))
+                        threshold = float(os.getenv("FACE_SIMILARITY_THRESHOLD", "0.60"))
+                        
+                        # Для обложки получаем путь к reference.png для face swap
+                        reference_image_path = None
+                        if is_cover:
+                            reference_image_path = os.path.join(BASE_UPLOAD_DIR, profile.reference_image_path)
+                            if not os.path.exists(reference_image_path):
+                                logger.warning(f"⚠️ Reference изображение не найдено: {reference_image_path}")
+                                reference_image_path = None
+                            else:
+                                logger.info(f"✓ Reference изображение найдено для face swap обложки: {reference_image_path}")
+                        
+                        image_bytes, face_verification_result = await generate_with_verification(
+                            prompt=enhanced_prompt,
+                            reference_image_url=reference_image_url,
+                            mean_embedding_bytes=profile.embedding,
+                            strength=strength,
+                            max_retries=max_retries,
+                            similarity_threshold=threshold,
+                            is_cover=is_cover,
+                            reference_image_path=reference_image_path
                         )
-                    else:
-                        logger.warning(f"⚠ Ошибка face swap с фото {idx + 1}: {e.detail}")
-                        continue
-                except Exception as e:
-                    last_error = e
-                    logger.warning(f"⚠ Неожиданная ошибка face swap с фото {idx + 1}: {str(e)}")
-                    continue
-            
-            if not face_swap_success:
-                logger.warning(f"⚠ Face swap не удался ни с одним из {len(available_photos)} фото, используем оригинальное изображение")
-                if last_error:
-                    logger.warning(f"⚠ Последняя ошибка: {last_error}")
-                final_image_bytes = generated_image_bytes
-        else:
-            logger.info("Фото ребёнка не указано, используем оригинальное изображение")
-            final_image_bytes = generated_image_bytes
+                        
+                        face_profile_used = True
+                        logger.info(
+                            f"✓ Face profile использован: similarity={face_verification_result.get('face_similarity', 0):.3f}, "
+                            f"verified={face_verification_result.get('face_verified', False)}, "
+                            f"attempts={face_verification_result.get('attempts', 0)}"
+                        )
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось использовать face profile: {e}, используем обычную генерацию")
         
-        # Шаг 3: Сохраняем изображение в локальное хранилище
-        import uuid
-        storage_path = f"final/{uuid.uuid4()}.jpg"
-        public_url = upload_image_bytes(final_image_bytes, storage_path, content_type="image/jpeg")
+        # Определяем, является ли это обложкой (для правильной обработки промпта)
+        # Проверяем промпт на наличие признаков обложки
+        is_cover = "cover" in prompt.lower() and "book" in prompt.lower()
         
-        logger.info(f"✓ Изображение сохранено: {public_url}")
+        # Если face profile не использован, генерируем обычным способом
+        if not face_profile_used:
+            # Генерируем изображение через Pollinations.ai API
+            # Передаем is_cover для правильной обработки промпта
+            image_bytes = await generate_raw_image(prompt, max_retries=3, is_cover=is_cover)
+        
+        if not image_bytes or len(image_bytes) == 0:
+            raise HTTPException(
+                status_code=500,
+                detail="Pollinations.ai вернул пустое изображение"
+            )
+        
+        logger.info(f"✓ Финальное изображение сгенерировано через Pollinations.ai, размер: {len(image_bytes)} байт")
+        
+        # Для обложки добавляем название книги программно (после генерации изображения)
+        if book_title:
+            try:
+                from .cover_title_service import add_title_to_cover
+                image_bytes = add_title_to_cover(image_bytes, book_title, style)
+                logger.info(f"✓ Название книги добавлено на обложку программно: {book_title}")
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось добавить название на обложку: {e}")
+        
+        # Применяем face swap, если переданы фотографии ребёнка
+        # КРИТИЧЕСКИ ВАЖНО: Используем ВСЕ фотографии для лучшего сходства!
+        should_apply_face_swap = False
+        photo_paths_list = []
+        
+        # Собираем все доступные пути к фотографиям
+        if child_photo_paths:
+            # Конвертируем URL в пути, если нужно
+            for photo_item in child_photo_paths:
+                if isinstance(photo_item, str):
+                    # Если это URL, извлекаем путь
+                    if "/static/" in photo_item:
+                        relative_path = photo_item.split("/static/", 1)[1]
+                        photo_path = os.path.join(BASE_UPLOAD_DIR, relative_path)
+                        if os.path.exists(photo_path):
+                            photo_paths_list.append(photo_path)
+                            should_apply_face_swap = True
+                    # Если это уже путь
+                    elif os.path.exists(photo_item):
+                        photo_paths_list.append(photo_item)
+                        should_apply_face_swap = True
+        
+        # Также добавляем child_photo_path для обратной совместимости
+        if child_photo_path and os.path.exists(child_photo_path):
+            if child_photo_path not in photo_paths_list:
+                photo_paths_list.append(child_photo_path)
+            should_apply_face_swap = True
+        
+        if should_apply_face_swap:
+            try:
+                from .face_swap_service import apply_face_swap
+                logger.info(f"🎭 Применение face swap с {len(photo_paths_list)} фотографиями ребёнка для идеального сходства")
+                image_bytes = await apply_face_swap(
+                    image_bytes, 
+                    child_photo_path=child_photo_path,
+                    child_photo_paths=photo_paths_list
+                )
+                logger.info(f"✓ Face swap применён успешно с использованием {len(photo_paths_list)} фотографий")
+            except Exception as e:
+                logger.warning(f"⚠️ Ошибка при применении face swap: {str(e)}, продолжаем без face swap")
+        
+        # Сохраняем изображение локально
+        finals_dir = os.path.join(BASE_UPLOAD_DIR, "finals")
+        os.makedirs(finals_dir, exist_ok=True)
+        
+        # Генерируем уникальное имя файла
+        unique_filename = f"{uuid.uuid4()}.jpg"
+        file_path = os.path.join(finals_dir, unique_filename)
+        
+        # Сохраняем файл
+        with open(file_path, "wb") as f:
+            f.write(image_bytes)
+        
+        logger.info(f"✓ Изображение сохранено: {file_path}")
+        
+        # Формируем публичный URL
+        base_url = get_server_base_url()
+        # Убираем порт :8000 из URL, так как через Nginx запросы идут без порта
+        if ":8000" in base_url:
+            base_url = base_url.replace(":8000", "")
+        
+        public_url = f"{base_url}/static/finals/{unique_filename}"
+        logger.info(f"✓ Финальное изображение сохранено: {public_url}")
         
         return public_url
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"✗ Ошибка в image_pipeline: {str(e)}", exc_info=True)
+        logger.error(f"❌ Ошибка при генерации финального изображения: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Ошибка при генерации финального изображения: {str(e)}"

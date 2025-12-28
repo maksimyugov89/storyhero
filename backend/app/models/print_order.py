@@ -12,7 +12,7 @@ class PrintOrder(Base):
     __tablename__ = "print_orders"
     
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
-    user_id = Column(String, nullable=False)  # UUID из Supabase auth.users
+    user_id = Column(String, nullable=False)  # UUID пользователя
     book_id = Column(UUID(as_uuid=True), ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
     book_title = Column(String, nullable=False)
     
@@ -36,5 +36,7 @@ class PrintOrder(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Связь с книгой
-    book = relationship("Book", backref="print_orders")
+    # ВАЖНО: Используем passive_deletes=True, чтобы SQLAlchemy не пытался обновлять book_id при удалении книги
+    # Вместо этого заказы удаляются через raw SQL перед удалением книги
+    book = relationship("Book", backref="print_orders", passive_deletes=True)
 

@@ -22,7 +22,7 @@ FREE_STYLES = [
     "pencil",      # Карандашный
 ]
 
-# 20 премиум стилей
+# 23 премиум стиля
 PREMIUM_STYLES = [
     "disney",
     "pixar",
@@ -44,6 +44,9 @@ PREMIUM_STYLES = [
     "educational",
     "retro",
     "pop_art",
+    "marvel",  # Стиль комиксов Marvel
+    "dc",      # Стиль комиксов DC
+    "anime",   # Японский аниме стиль
 ]
 
 ALL_STYLES = FREE_STYLES + PREMIUM_STYLES

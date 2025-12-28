@@ -15,7 +15,7 @@ def get_current_user(
 ) -> User:
     """
     Получает текущего пользователя из JWT токена.
-    Заменяет старую функцию verify_supabase_token.
+    Получает текущего пользователя из JWT токена.
     Возвращает dict для совместимости со старым кодом.
     """
     credentials_exception = HTTPException(

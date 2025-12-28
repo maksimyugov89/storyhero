@@ -3,7 +3,7 @@ import time
 import logging
 from pathlib import Path
 
-from .local_file_service import BASE_UPLOAD_DIR
+from .storage import BASE_UPLOAD_DIR
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ import requests
 from ..db import get_db
 from ..models import Scene, Image, ThemeStyle, Book
 from ..services.image_pipeline import generate_draft_image
-from ..services.local_file_service import upload_image_bytes
+from ..services.storage import upload_image as upload_image_bytes
 from ..core.deps import get_current_user
 
 router = APIRouter(tags=["images"])
@@ -66,31 +66,68 @@ async def _generate_draft_images_internal(
     scenes_with_prompts = [s for s in scenes if s.image_prompt]
     logger.info(f"🖼️ _generate_draft_images_internal: Сцен с промптами: {len(scenes_with_prompts)}")
     
-    # Обновляем прогресс с общим количеством изображений
+    # Обновляем прогресс с общим количеством изображений в начале генерации
     if task_id:
         from ..services.tasks import update_task_progress
         update_task_progress(task_id, {
-            "total_images": len(scenes_with_prompts),
-            "images_generated": 0
+            "stage": "generating_draft_images",  # Устанавливаем stage
+            "total_images": len(scenes_with_prompts),  # Общее количество изображений
+            "images_generated": 0,  # Начинаем с 0
+            "message": f"Начало генерации {len(scenes_with_prompts)} черновых изображений...",
+            "book_id": str(data.book_id)  # Сохраняем book_id
         })
+        logger.info(f"✅ Progress инициализирован: total_images={len(scenes_with_prompts)}")
 
     for idx, scene in enumerate(scenes_with_prompts, 1):
         logger.info(f"🖼️ Генерация изображения {idx}/{len(scenes_with_prompts)} для сцены order={scene.order}")
         
-        # Обновляем прогресс
+        # Обновляем прогресс ПЕРЕД генерацией (показываем, что начинаем генерацию)
         if task_id:
             from ..services.tasks import update_task_progress
             update_task_progress(task_id, {
-                "images_generated": idx - 1,
-                "message": f"Генерация изображения {idx}/{len(scenes_with_prompts)}..."
+                "stage": "generating_draft_images",  # Сохраняем stage
+                "images_generated": idx - 1,  # Количество уже созданных (idx - 1)
+                "total_images": len(scenes_with_prompts),  # Сохраняем total_images
+                "message": f"Генерация изображения {idx}/{len(scenes_with_prompts)}...",
+                "book_id": str(data.book_id)  # Сохраняем book_id
             })
         
         # Формируем промпт с финальным стилем (если есть)
-        if final_style:
-            enhanced_prompt = f"Visual style: {final_style}. {scene.image_prompt}"
+        # КРИТИЧНО: Для обложки используем sanitizer, чтобы убрать все инструкции о тексте
+        # Усиливаем указание возраста ребенка в промпте
+        # ВАЖНО: НЕ используем слово "IMPORTANT:" - оно попадает в изображение как текст!
+        from ..models import Child
+        child = db.query(Child).filter(Child.id == book.child_id).first() if book.child_id else None
+        age_emphasis = f"The child character must look exactly {child.age} years old with child proportions: large head relative to body, short legs, small hands, chubby cheeks, big eyes. " if child and child.age else ""
+        
+        # КРИТИЧНО: Для обложки используем sanitizer, чтобы убрать "Visual style:", "IMPORTANT:", "Book cover illustration"
+        from ..services.scene_utils import is_cover_scene
+        from ..services.prompt_sanitizer import build_cover_prompt
+        
+        if is_cover_scene(scene):
+            # Для обложки используем sanitizer - убирает все инструкции о тексте
+            enhanced_prompt = build_cover_prompt(
+                base_style=final_style or "storybook",
+                scene_prompt=scene.image_prompt or "",
+                age_emphasis=age_emphasis
+            )
+            logger.info(f"🧼 Cover draft prompt sanitized (order={scene.order})")
         else:
-            enhanced_prompt = scene.image_prompt
-            final_style = "storybook"  # дефолтный стиль
+            # Для обычных сцен формируем промпт БЕЗ "Visual style:" и "IMPORTANT:" в начале
+            # Эти фразы попадают в изображение как текст!
+            if final_style:
+                # Для новых премиум стилей (marvel, dc, anime) используем специальные промпты
+                if final_style in ['marvel', 'dc', 'anime']:
+                    from ..services.style_prompts import get_style_prompt
+                    enhanced_prompt = get_style_prompt(final_style, scene.image_prompt or "", is_cover=False)
+                    if age_emphasis:
+                        enhanced_prompt = f"{age_emphasis}{enhanced_prompt}"
+                else:
+                    # Используем стиль, но БЕЗ префикса "Visual style:"
+                    enhanced_prompt = f"{final_style} style. {age_emphasis}{scene.image_prompt}"
+            else:
+                enhanced_prompt = f"{age_emphasis}{scene.image_prompt}"
+                final_style = "storybook"  # дефолтный стиль
         
         # Генерируем черновое изображение через image_pipeline
         try:
@@ -111,34 +148,57 @@ async def _generate_draft_images_internal(
             )
         
         # Сохраняем или обновляем запись в БД
-        image_record = db.query(Image).filter(
-            Image.book_id == book_uuid,
-            Image.scene_order == scene.order
-        ).first()
-        
-        if image_record:
-            image_record.draft_url = image_url
-        else:
-            image_record = Image(
-                book_id=book_uuid,
-                scene_order=scene.order,
-                draft_url=image_url
-            )
-            db.add(image_record)
+        try:
+            image_record = db.query(Image).filter(
+                Image.book_id == book_uuid,
+                Image.scene_order == scene.order
+            ).first()
+            
+            if image_record:
+                image_record.draft_url = image_url
+            else:
+                image_record = Image(
+                    book_id=book_uuid,
+                    scene_order=scene.order,
+                    draft_url=image_url
+                )
+                db.add(image_record)
+            
+            # КРИТИЧЕСКИ ВАЖНО: Сохраняем каждое изображение сразу, чтобы не потерять прогресс
+            db.commit()
+            logger.info(f"✓ Изображение сохранено в БД для сцены order={scene.order}")
+        except Exception as db_error:
+            logger.error(f"❌ Ошибка при сохранении изображения в БД для сцены order={scene.order}: {str(db_error)}", exc_info=True)
+            db.rollback()
+            # Продолжаем генерацию остальных изображений
+            continue
         
         results.append({"order": scene.order, "image_url": image_url})
-        logger.info(f"✓ Изображение сохранено в БД для сцены order={scene.order}")
         
-        # Обновляем прогресс после успешной генерации
+        # Обновляем прогресс ПОСЛЕ сохранения изображения
         if task_id:
             from ..services.tasks import update_task_progress
             update_task_progress(task_id, {
-                "images_generated": idx,
-                "message": f"Изображение {idx}/{len(scenes_with_prompts)} готово ✓"
+                "stage": "generating_draft_images",  # Сохраняем stage
+                "images_generated": idx,  # Количество созданных изображений (idx, так как уже сохранено)
+                "total_images": len(scenes_with_prompts),  # Сохраняем total_images
+                "message": f"Изображение {idx}/{len(scenes_with_prompts)} создано",
+                "book_id": str(data.book_id)  # Сохраняем book_id
             })
     
-    db.commit()
     logger.info(f"✅ _generate_draft_images_internal: Успешно завершено для book_id={data.book_id}, сгенерировано изображений: {len(results)}")
+    
+    # Финальное обновление progress после завершения всех изображений
+    if task_id:
+        from ..services.tasks import update_task_progress
+        update_task_progress(task_id, {
+            "stage": "generating_draft_images",  # Остаемся на этом этапе до следующего шага
+            "images_generated": len(scenes_with_prompts),  # Все изображения созданы
+            "total_images": len(scenes_with_prompts),  # Общее количество
+            "message": f"Все черновые изображения созданы ({len(scenes_with_prompts)}/{len(scenes_with_prompts)})",
+            "book_id": str(data.book_id)  # Сохраняем book_id
+        })
+        logger.info(f"✅ Progress обновлен: все {len(scenes_with_prompts)} черновых изображений созданы")
 
     return {"images": results}
 

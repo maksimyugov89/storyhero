@@ -1,19 +1,27 @@
+"""
+Роутер для генерации полной книги через асинхронные задачи.
+"""
 import logging
-import os
-from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
-from uuid import UUID
-from datetime import datetime, timezone
 
 from ..db import get_db
-from ..models import Book, Child, Image, ThemeStyle
-from ..schemas.book import BookCreate, BookUpdate, BookOut, SceneOut
-from ..services.tasks import create_task, get_task_status, find_running_task
-from ..services.local_file_service import BASE_UPLOAD_DIR
+from ..models import Child, Book
 from ..core.deps import get_current_user
+from ..services.tasks import create_task, update_task_progress, get_task_status
+from ..routers.plot import _create_plot_internal, CreatePlotRequest
+from ..routers.text import _create_text_internal, CreateTextRequest
+from ..routers.image_prompts import _create_image_prompts_internal, CreateImagePromptsRequest
+from ..routers.images import _generate_draft_images_internal, ImageRequest
+from ..routers.final_images import _generate_final_images_internal
+from ..routers.style import _select_style_internal, SelectStyleRequest
+from ..models import Scene, Image as ImageModel
+from ..services.pdf_service import PdfPage, render_book_pdf
+from ..services.storage import BASE_UPLOAD_DIR, get_server_base_url
+from pathlib import Path
+import asyncio
 from ..config.styles import (
     normalize_style,
     is_style_known,
@@ -28,18 +36,447 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/books", tags=["books"])
 
 
+@router.get("")
+def list_books(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Получить список всех книг текущего пользователя."""
+    user_id = current_user.get("sub") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
+    
+    # user_id в БД хранится как строка, сравниваем как строки
+    books = db.query(Book).filter(Book.user_id == str(user_id)).all()
+    
+    result = []
+    for book in books:
+        # Преобразуем is_paid из строки "true"/"false" в boolean
+        is_paid = False
+        if book.is_paid:
+            is_paid = book.is_paid.lower() == "true"
+        
+        result.append({
+            "id": str(book.id),
+            "title": book.title,
+            "status": book.status,
+            "child_id": book.child_id,
+            "created_at": book.created_at.isoformat() if book.created_at else None,
+            "is_paid": is_paid  # Добавлено поле is_paid как boolean
+        })
+    
+    return result
+
+
+@router.get("/{book_id}")
+def get_book(
+    book_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Получить книгу по ID."""
+    user_id = current_user.get("sub") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
+    
+    # Преобразуем book_id в UUID
+    from uuid import UUID
+    try:
+        book_uuid = UUID(book_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Неверный формат book_id: {book_id}")
+    
+    # user_id в БД хранится как строка, сравниваем как строки
+    book = db.query(Book).filter(
+        Book.id == book_uuid,
+        Book.user_id == str(user_id)
+    ).first()
+    
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Книга с id={book_id} не найдена")
+    
+    # Преобразуем is_paid из строки "true"/"false" в boolean
+    is_paid = False
+    if book.is_paid:
+        is_paid = book.is_paid.lower() == "true"
+    
+    return {
+        "id": str(book.id),
+        "title": book.title,
+        "status": book.status,
+        "child_id": book.child_id,
+        "created_at": book.created_at.isoformat() if book.created_at else None,
+        "final_pdf_url": book.final_pdf_url,
+        "is_paid": is_paid  # Добавлено поле is_paid как boolean
+    }
+
+
+@router.get("/{book_id}/scenes")
+def get_book_scenes(
+    book_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Получить сцены книги по ID."""
+    user_id = current_user.get("sub") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
+    
+    # Преобразуем book_id в UUID
+    from uuid import UUID
+    try:
+        book_uuid = UUID(book_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Неверный формат book_id: {book_id}")
+    
+    # Проверяем, что книга существует и принадлежит пользователю
+    # user_id в БД хранится как строка, сравниваем как строки
+    book = db.query(Book).filter(
+        Book.id == book_uuid,
+        Book.user_id == str(user_id)
+    ).first()
+    
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Книга с id={book_id} не найдена")
+    
+    # Получаем сцены книги
+    scenes = db.query(Scene).filter(Scene.book_id == book_uuid).order_by(Scene.order).all()
+    
+    # Получаем изображения для сцен
+    images = db.query(ImageModel).filter(ImageModel.book_id == book_uuid).all()
+    images_by_scene = {img.scene_order: img for img in images}
+    
+    result = []
+    for scene in scenes:
+        image = images_by_scene.get(scene.order)
+        # КРИТИЧНО: Формат должен соответствовать ожиданиям фронтенда!
+        # Фронтенд ожидает: id, book_id, order, short_summary, image_prompt, draft_url, image_url
+        result.append({
+            "id": str(scene.id),  # ОБЯЗАТЕЛЬНО: фронтенд требует id
+            "book_id": str(book.id),  # ОБЯЗАТЕЛЬНО: фронтенд требует book_id
+            "order": int(scene.order),  # КРИТИЧНО: Явно преобразуем в int, чтобы гарантировать числовой тип
+            "short_summary": scene.short_summary or "",  # ОБЯЗАТЕЛЬНО: не может быть None
+            "text": scene.text,  # Опционально, но возвращаем
+            "image_prompt": scene.image_prompt,  # Опционально
+            "draft_url": image.draft_url if image and image.draft_url else None,  # draft_url, не draft_image_url!
+            "image_url": image.final_url if image and image.final_url else None  # image_url, не final_image_url!
+        })
+    
+    return result
+
+
+@router.delete("/{book_id}")
+def delete_book(
+    book_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Удалить книгу по ID.
+    
+    ВАЖНО: Пользователь может удалять любые свои книги, включая оплаченные.
+    Ограничений на удаление оплаченных книг нет.
+    """
+    user_id = current_user.get("sub") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
+    
+    # Преобразуем book_id в UUID
+    from uuid import UUID
+    try:
+        book_uuid = UUID(book_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Неверный формат book_id: {book_id}")
+    
+    # Проверяем, что книга существует и принадлежит пользователю
+    book = db.query(Book).filter(
+        Book.id == book_uuid,
+        Book.user_id == str(user_id)  # Сравниваем user_id как строку
+    ).first()
+    
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Книга с id={book_id} не найдена")
+    
+    # Удаляем связанные данные
+    # КРИТИЧНО: Используем raw SQL для всех удалений, чтобы полностью обойти SQLAlchemy ORM
+    from sqlalchemy import text
+    
+    # 1. Удаляем заказы на печать через raw SQL (КРИТИЧНО: перед удалением книги, так как book_id NOT NULL)
+    db.execute(
+        text("DELETE FROM print_orders WHERE book_id = :book_id"),
+        {"book_id": str(book_uuid)}
+    )
+    
+    # 2. Удаляем изображения через raw SQL
+    db.execute(
+        text("DELETE FROM images WHERE book_id = :book_id"),
+        {"book_id": str(book_uuid)}
+    )
+    
+    # 3. Удаляем ThemeStyle через raw SQL (если есть)
+    db.execute(
+        text("DELETE FROM theme_styles WHERE book_id = :book_id"),
+        {"book_id": str(book_uuid)}
+    )
+    
+    # 4. Удаляем сцены через raw SQL (они удалятся автоматически благодаря cascade, но удаляем явно)
+    db.execute(
+        text("DELETE FROM scenes WHERE book_id = :book_id"),
+        {"book_id": str(book_uuid)}
+    )
+    
+    # 5. Удаляем книгу через raw SQL
+    db.execute(
+        text("DELETE FROM books WHERE id = :book_id"),
+        {"book_id": str(book_uuid)}
+    )
+    
+    # КРИТИЧНО: Commit всех удалений одной транзакцией
+    db.commit()
+    
+    # Очищаем кеш сессии после всех удалений
+    db.expire_all()
+    
+    logger.info(f"✅ Книга {book_id} успешно удалена пользователем {user_id}")
+    
+    return {"message": "Книга успешно удалена", "book_id": book_id}
+
+
+@router.get("/task_status/{task_id}")
+def get_task_status_endpoint(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Получить статус задачи генерации книги."""
+    user_id = current_user.get("sub") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
+    
+    task_data = get_task_status(task_id)
+    
+    # Если задача не найдена в памяти, проверяем, не была ли она прервана при перезапуске
+    if not task_data:
+        # Пытаемся найти книгу по task_id в метаданных других задач или по book_id
+        # Ищем книги пользователя со статусом "draft", которые могли быть прерваны
+        from app.models import Scene, Image as ImageModel, ThemeStyle
+        from uuid import UUID
+        
+        # Ищем книги пользователя, которые находятся в процессе генерации
+        # (статус "draft" и есть сцены, но нет финальных изображений или PDF)
+        books = db.query(Book).filter(
+            Book.user_id == str(user_id),
+            Book.status == "draft"
+        ).all()
+        
+        for book in books:
+            # Проверяем состояние книги, чтобы определить, на каком этапе остановилась генерация
+            scenes = db.query(Scene).filter(Scene.book_id == book.id).all()
+            images = db.query(ImageModel).filter(ImageModel.book_id == book.id).all()
+            
+            if not scenes:
+                continue  # Книга не начала генерацию
+            
+            # Определяем этап генерации
+            has_text = any(scene.text for scene in scenes)
+            has_prompts = any(scene.image_prompt for scene in scenes)
+            has_draft_images = any(img.draft_url for img in images)
+            has_final_images = any(img.final_url for img in images)
+            has_pdf = book.final_pdf_url is not None
+            
+            # Определяем stage на основе состояния книги
+            if has_pdf:
+                stage = "completed"
+                current_step = 8
+                message = "Книга готова!"
+            elif has_final_images:
+                stage = "generating_pdf"
+                current_step = 8
+                message = "Генерация была прервана при создании PDF. Книга готова для продолжения генерации PDF."
+            elif has_draft_images:
+                stage = "generating_final_images"
+                current_step = 7
+                message = "Генерация была прервана при перезапуске сервера. Книга готова для продолжения генерации финальных изображений."
+            elif has_prompts:
+                stage = "generating_draft_images"
+                current_step = 6
+                message = "Генерация была прервана при перезапуске сервера. Книга готова для продолжения генерации черновых изображений."
+            elif has_text:
+                stage = "text_ready"
+                current_step = 3
+                message = "Генерация была прервана при перезапуске сервера. Книга готова для продолжения генерации."
+            else:
+                stage = "creating_plot"
+                current_step = 2
+                message = "Генерация была прервана при перезапуске сервера. Книга готова для продолжения генерации."
+            
+            # Возвращаем информацию о прерванной задаче
+            return {
+                "id": task_id,
+                "status": "interrupted",  # Новый статус для прерванных задач
+                "created_at": book.created_at.isoformat() if book.created_at else None,
+                "result": None,
+                "error": None,
+                "meta": {
+                    "user_id": user_id,
+                    "book_id": str(book.id),
+                    "type": "generate_full_book"
+                },
+                "progress": {
+                    "stage": stage,
+                    "current_step": current_step,
+                    "total_steps": 8,
+                    "message": message,
+                    "book_id": str(book.id),
+                    "interrupted": True,  # Флаг, что задача была прервана
+                    "updated_at": book.updated_at.isoformat() if book.updated_at else None
+                }
+            }
+        
+        # Если книга не найдена, возвращаем 404
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    
+    # Проверяем, что задача принадлежит текущему пользователю
+    task_meta = task_data.get("meta", {})
+    if task_meta.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    
+    return {
+        "id": task_id,  # Добавляем id задачи в ответ
+        "status": task_data.get("status", "unknown"),
+        "created_at": task_data.get("created_at"),
+        "result": task_data.get("result"),
+        "error": task_data.get("error"),
+        "meta": task_data.get("meta", {}),
+        "progress": task_data.get("progress", {})
+    }
+
+
+@router.post("/{book_id}/continue_generation")
+async def continue_generation(
+    book_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Продолжить генерацию прерванной книги.
+    
+    Определяет этап генерации на основе состояния книги и продолжает с нужного места.
+    """
+    user_id = current_user.get("sub") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
+    
+    from uuid import UUID
+    try:
+        book_uuid = UUID(book_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Неверный формат book_id: {book_id}")
+    
+    # Проверяем, что книга существует и принадлежит пользователю
+    book = db.query(Book).filter(
+        Book.id == book_uuid,
+        Book.user_id == str(user_id)
+    ).first()
+    
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Книга с id={book_id} не найдена")
+    
+    # Проверяем состояние книги
+    from app.models import Scene, Image as ImageModel, ThemeStyle, Child
+    scenes = db.query(Scene).filter(Scene.book_id == book_uuid).all()
+    images = db.query(ImageModel).filter(ImageModel.book_id == book_uuid).all()
+    
+    if not scenes:
+        raise HTTPException(status_code=400, detail="Книга не начала генерацию. Используйте /generate_full_book")
+    
+    # Определяем этап генерации
+    has_draft_images = any(img.draft_url for img in images)
+    has_final_images = any(img.final_url for img in images)
+    has_pdf = book.final_pdf_url is not None
+    
+    # Получаем данные ребёнка
+    child = db.query(Child).filter(Child.id == book.child_id).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Ребёнок не найден")
+    
+    # Получаем стиль
+    theme_style = db.query(ThemeStyle).filter(ThemeStyle.book_id == book_uuid).first()
+    if not theme_style:
+        raise HTTPException(status_code=400, detail="Стиль не выбран. Сначала выберите стиль.")
+    
+    final_style = theme_style.final_style
+    
+    # Определяем, с какого этапа продолжать
+    if has_pdf:
+        raise HTTPException(status_code=400, detail="Книга уже полностью сгенерирована")
+    elif has_final_images:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Финальные изображения готовы. Используйте /books/{book_id}/generate_final_version для создания PDF"
+        )
+    elif has_draft_images:
+        # Продолжаем с генерации финальных изображений
+        logger.info(f"🔄 Продолжение генерации: финальные изображения для книги {book_id}")
+        
+        # Получаем фотографии ребёнка
+        from ..routers.children import get_child_photos
+        try:
+            child_photos_data = get_child_photos(child.id, db, current_user)
+            child_photos = [photo["url"] for photo in child_photos_data.get("photos", [])] if child_photos_data else []
+        except:
+            child_photos = []
+        
+        face_url = child_photos[0] if child_photos else None
+        if not face_url:
+            raise HTTPException(status_code=400, detail="Не найдены фотографии ребёнка")
+        
+        # Создаем задачу для продолжения генерации финальных изображений
+        from ..services.tasks import create_task
+        from ..routers.final_images import _generate_final_images_internal
+        
+        task_id = create_task(
+            _generate_final_images_internal,
+            book_id,
+            db,
+            user_id,
+            final_style=final_style,
+            face_url=face_url,
+            child_photos=child_photos,
+            meta={
+                "type": "continue_generation",
+                "user_id": user_id,
+                "book_id": book_id,
+                "stage": "generating_final_images"
+            }
+        )
+        
+        return {
+            "task_id": task_id,
+            "message": "Продолжение генерации финальных изображений запущено",
+            "book_id": book_id,
+            "stage": "generating_final_images"
+        }
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Книга находится на начальном этапе. Используйте /generate_full_book для полной генерации"
+        )
+
+
 class GenerateFullBookRequest(BaseModel):
-    """Запрос на генерацию книги - принимает child_id, style и num_pages"""
+    """Запрос на генерацию книги - принимает child_id, style, num_pages и theme"""
     child_id: str
     style: str = "classic"
     num_pages: int = 20  # 10 или 20 страниц (без обложки)
+    theme: str  # Тема книги (обязательное поле) - о чём будет книга
 
 
 async def generate_full_book_task(
     name: str,
     age: int,
-    interests: list[str],
-    fears: list[str],
+    interests: List[str],
+    fears: List[str],
     personality: str,
     moral: str,
     face_url: str,
@@ -49,162 +486,138 @@ async def generate_full_book_task(
     child_id: Optional[int] = None,
     task_id: Optional[str] = None,
     num_pages: int = 20,
-    child_photos: Optional[list[str]] = None
+    child_photos: Optional[List[str]] = None,
+    theme: Optional[str] = None  # Тема книги
 ):
-    """Полный цикл генерации книги
+    """
+    Асинхронная задача для генерации полной книги.
     
     Args:
-        child_id: Если передан, используется существующий профиль. Иначе создается новый.
+        name: Имя ребёнка
+        age: Возраст ребёнка
+        interests: Список интересов
+        fears: Список страхов
+        personality: Характер
+        moral: Мораль/ценности
+        face_url: URL фото ребёнка
+        style: Стиль иллюстраций
+        user_id: ID пользователя
+        db: Сессия БД
+        child_id: ID ребёнка (опционально)
+        task_id: ID задачи для отслеживания прогресса
+        num_pages: Количество страниц (10 или 20)
+        child_photos: Список URL фотографий ребёнка
+        theme: Тема книги (о чём будет книга)
     """
-    # logger уже определен в начале файла
-    
-    from ..routers.profile import CreateProfileRequest, _create_profile_internal
-    from ..routers.plot import CreatePlotRequest, _create_plot_internal
-    from ..routers.text import CreateTextRequest, _create_text_internal
-    from ..routers.image_prompts import CreateImagePromptsRequest, _create_image_prompts_internal
-    from ..routers.images import ImageRequest, _generate_draft_images_internal
-    from ..routers.final_images import _generate_final_images_internal
-    
-    from ..services.tasks import update_task_progress
+    from ..services.subscription_service import check_and_update_user_subscription_status
     
     try:
-        # ВАЖНО: проверка подписки внутри задачи (чтобы нельзя было обойти через прямой запуск фоновой задачи)
-        normalized_style = normalize_style(style)
-        if not is_style_known(normalized_style):
-            raise HTTPException(status_code=400, detail=f"Неизвестный стиль: {style}. Доступные: {', '.join(ALL_STYLES)}")
-
-        # Чистим истёкшие подписки пользователя перед проверкой
-        deactivate_if_expired(db, user_id)
-
-        if is_premium_style(normalized_style) and not check_style_access(db, user_id, normalized_style):
-            raise HTTPException(
-                status_code=403,
-                detail="Этот стиль доступен только по подписке. Оформите подписку за 199 ₽/мес"
-            )
-
-        logger.info(f"🚀 Начало генерации книги для child_id={child_id}, user_id={user_id}")
+        # Проверяем и обновляем статус подписки пользователя
+        check_and_update_user_subscription_status(db, user_id)
         
-        # Шаг 1: Создать профиль (если child_id не передан)
-        if child_id is None:
-            if task_id:
-                update_task_progress(task_id, {
-                    "stage": "creating_profile",
-                    "current_step": 1,
-                    "total_steps": 7,
-                    "message": "Создание профиля ребёнка..."
-                })
-            logger.info("📝 Шаг 1: Создание нового профиля")
-            profile_request = CreateProfileRequest(
-                name=name,
-                age=age,
-                interests=interests,
-                fears=fears,
-                personality=personality,
-                moral=moral
-            )
-            profile_result = await _create_profile_internal(profile_request, db, user_id)
-            child_id = profile_result.child_id
-            logger.info(f"✓ Профиль создан: child_id={child_id}")
-        else:
-            logger.info(f"✓ Используем существующий профиль: child_id={child_id}")
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "starting",
+                "current_step": 1,
+                "total_steps": 7,
+                "message": "Инициализация генерации книги...",
+                "theme": theme or "не указана"
+            })
         
-        # Шаг 2: Создать сюжет
+        logger.info(f"📖 Шаг 1: Начало генерации книги для child_id={child_id} (theme={theme})")
+        
+        # Шаг 2: Создание сюжета
         if task_id:
             update_task_progress(task_id, {
                 "stage": "creating_plot",
                 "current_step": 2,
                 "total_steps": 7,
-                "message": "Создание сюжета истории..."
+                "message": "Создание сюжета книги...",
             })
-        logger.info(f"📖 Шаг 2: Создание сюжета для child_id={child_id} (num_pages={num_pages})")
-        plot_request = CreatePlotRequest(child_id=child_id, num_pages=num_pages)
-        plot_result = await _create_plot_internal(plot_request, db, user_id)
-        book_id_str = plot_result.book_id  # UUID как строка
-        logger.info(f"✓ Сюжет создан: book_id={book_id_str}")
         
-        # Преобразуем строку в UUID для запросов к БД
-        from uuid import UUID as UUIDType
-        try:
-            book_uuid = UUIDType(book_id_str)
-        except ValueError:
-            raise Exception(f"Неверный формат book_id: {book_id_str}")
+        logger.info(f"📖 Шаг 2: Создание сюжета для child_id={child_id} (num_pages={num_pages}, theme={theme})")
+        plot_request = CreatePlotRequest(child_id=child_id, num_pages=num_pages, theme=theme)
+        # Передаем task_id в _create_plot_internal для обновления progress сразу после создания книги
+        plot_result = await _create_plot_internal(plot_request, db, user_id, task_id=task_id)
         
-        # Привязываем книгу к пользователю
-        from ..models import Book
-        book = db.query(Book).filter(Book.id == book_uuid).first()
-        if book:
-            book.user_id = user_id
-            db.commit()
+        # Обновляем progress после завершения создания сюжета (book_id уже добавлен в _create_plot_internal)
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "plot_ready",
+                "current_step": 2,
+                "total_steps": 7,
+                "message": "Сюжет создан!",
+                "book_id": str(plot_result.book_id)  # Сохраняем book_id на всех этапах
+            })
         
-        # Шаг 3: Создать текст
+        logger.info(f"✓ Сюжет создан: book_id={plot_result.book_id}")
+        
+        # Шаг 3: Создание текста
         if task_id:
             update_task_progress(task_id, {
                 "stage": "creating_text",
                 "current_step": 3,
                 "total_steps": 7,
-                "message": "Генерация текста истории..."
+                "message": "Генерация текста для сцен...",
+                "book_id": str(plot_result.book_id)  # Сохраняем book_id на всех этапах
             })
-        logger.info(f"✍️ Шаг 3: Создание текста для book_id={book_id_str}")
-        text_request = CreateTextRequest(book_id=book_id_str)
-        await _create_text_internal(text_request, db, user_id)
-        logger.info("✓ Текст создан")
         
-        # ВАЖНО: После создания текста пользователь может его редактировать
+        logger.info(f"✍️ Шаг 3: Создание текста для book_id={plot_result.book_id}")
+        text_request = CreateTextRequest(book_id=plot_result.book_id)
+        await _create_text_internal(text_request, db, user_id)
+        
         if task_id:
             update_task_progress(task_id, {
                 "stage": "text_ready",
                 "current_step": 3,
                 "total_steps": 7,
                 "message": "Текст готов! Вы можете редактировать его пока генерируются изображения.",
-                "book_id": book_id_str
+                "book_id": str(plot_result.book_id)  # Преобразуем в строку для JSON
             })
         
-        # Шаг 4: Создать промпты для изображений
+        # Шаг 4: Создание промптов для изображений
         if task_id:
             update_task_progress(task_id, {
                 "stage": "creating_prompts",
                 "current_step": 4,
                 "total_steps": 7,
-                "message": "Создание промптов для изображений..."
+                "message": "Создание промптов для изображений...",
+                "book_id": str(plot_result.book_id)  # Сохраняем book_id на всех этапах
             })
-        logger.info(f"🎨 Шаг 4: Создание промптов для изображений")
-        prompts_request = CreateImagePromptsRequest(book_id=book_id_str)
-        await _create_image_prompts_internal(prompts_request, db, user_id)
-        logger.info("✓ Промпты созданы")
         
-        # Шаг 5: Выбрать стиль (manual по запросу фронтенда)
+        logger.info(f"🖼️ Шаг 4: Создание промптов для book_id={plot_result.book_id}")
+        prompts_request = CreateImagePromptsRequest(book_id=plot_result.book_id)
+        await _create_image_prompts_internal(prompts_request, db, user_id)
+        
+        # Шаг 5: Выбор стиля
         if task_id:
             update_task_progress(task_id, {
                 "stage": "selecting_style",
                 "current_step": 5,
                 "total_steps": 7,
-                "message": "Выбор стиля иллюстраций..."
+                "message": "Выбор стиля иллюстраций...",
+                "book_id": str(plot_result.book_id)  # Сохраняем book_id на всех этапах
             })
-        logger.info(f"🎭 Шаг 5: Выбор стиля")
-        from ..routers.style import SelectStyleRequest, _select_style_internal
-        style_request = SelectStyleRequest(book_id=book_id_str, mode="manual", style=normalized_style)
-        style_result = await _select_style_internal(style_request, db, user_id)
-        final_style = style_result.final_style
-        logger.info(f"✓ Стиль выбран: {final_style}")
         
-        # Шаг 6: Генерировать черновые изображения
+        logger.info(f"🎨 Шаг 5: Выбор стиля для book_id={plot_result.book_id}")
+        style_request = SelectStyleRequest(book_id=plot_result.book_id, mode="manual", style=style)
+        await _select_style_internal(style_request, db, user_id)
+        
+        # Шаг 6: Генерация черновых изображений
         if task_id:
             update_task_progress(task_id, {
-                "stage": "generating_images",
+                "stage": "generating_draft_images",
                 "current_step": 6,
                 "total_steps": 7,
-                "message": "Генерация изображений...",
-                "images_generated": 0,
-                "total_images": 0
+                "message": "Генерация черновых изображений...",
+                "book_id": str(plot_result.book_id)  # Сохраняем book_id на всех этапах
             })
-        logger.info(f"🖼️ Шаг 6: Генерация черновых изображений")
-        from ..routers.images import ImageRequest, _generate_draft_images_internal
-        draft_request = ImageRequest(book_id=book_id_str, face_url=face_url)
-        # Передаем task_id для обновления прогресса
-        await _generate_draft_images_internal(draft_request, db, user_id, final_style=final_style, task_id=task_id)
-        logger.info("✓ Черновые изображения созданы")
         
-        # Шаг 7: Генерировать финальные изображения
+        logger.info(f"🖼️ Шаг 6: Генерация черновых изображений для book_id={plot_result.book_id}")
+        image_request = ImageRequest(book_id=plot_result.book_id, face_url=face_url)
+        await _generate_draft_images_internal(image_request, db, user_id, final_style=style, task_id=task_id)
+        
+        # Шаг 7: Генерация финальных изображений
         if task_id:
             update_task_progress(task_id, {
                 "stage": "generating_final_images",
@@ -212,57 +625,144 @@ async def generate_full_book_task(
                 "total_steps": 7,
                 "message": "Генерация финальных изображений с face swap...",
                 "images_generated": 0,
-                "total_images": 0
+                "total_images": 0,
+                "book_id": str(plot_result.book_id)  # Сохраняем book_id на всех этапах
             })
-        logger.info(f"✨ Шаг 7: Генерация финальных изображений")
-        from ..routers.final_images import _generate_final_images_internal
+        
+        logger.info(f"🎨 Шаг 7: Генерация финальных изображений для book_id={plot_result.book_id}")
         try:
-            await _generate_final_images_internal(
-                book_id=book_id_str,
-                db=db,
-                current_user_id=user_id,
-                final_style=final_style,
+            final_images_result = await _generate_final_images_internal(
+                book_id=plot_result.book_id,
+            db=db,
+            current_user_id=user_id,
+                final_style=style,
                 face_url=face_url,
                 task_id=task_id,
                 child_photos=child_photos
-            )
-            logger.info("✓ Финальные изображения созданы")
-        except HTTPException as e:
-            # Если книга была удалена (410), это не критическая ошибка
-            if e.status_code == 410:
-                logger.warning(f"⚠️ Книга была удалена во время генерации финальных изображений. Генерация прервана.")
-                raise Exception(f"Книга была удалена во время генерации: {e.detail}")
-            # Для других HTTP ошибок пробрасываем как есть
-            raise Exception(f"Ошибка при генерации финальных изображений: {e.detail}")
+        )
+            logger.info(f"✅ Шаг 7 завершен: сгенерировано {len(final_images_result.get('images', []))} изображений")
+        except Exception as e:
+            logger.error(f"❌ Ошибка в Шаге 7: {str(e)}", exc_info=True)
+            raise
         
-        # Генерация завершена
+        # Шаг 8: Генерация PDF
         if task_id:
             update_task_progress(task_id, {
-                "stage": "images_ready",
-                "current_step": 7,
-                "total_steps": 7,
-                "message": "Рендеринг изображений завершён! Теперь вы можете редактировать их.",
-                "book_id": book_id_str
+                "stage": "generating_pdf",
+                "current_step": 8,
+                "total_steps": 8,
+                "message": "Создание PDF файла...",
             })
         
-        logger.info(f"✅ Генерация книги завершена: book_id={book_id_str}, child_id={child_id}")
+        logger.info(f"📄 Шаг 8: Генерация PDF для book_id={plot_result.book_id}")
+        
+        # Преобразуем book_id в UUID
+        from uuid import UUID as UUIDType
+        book_uuid = UUIDType(plot_result.book_id)
+        
+        # Получаем книгу
+        book = db.query(Book).filter(Book.id == book_uuid).first()
+        if not book:
+            raise HTTPException(status_code=404, detail="Книга не найдена")
+        
+        # Получаем стиль книги
+        from ..models import ThemeStyle
+        theme_style = db.query(ThemeStyle).filter(ThemeStyle.book_id == book_uuid).first()
+        book_style = theme_style.final_style if theme_style else style
+        
+        # Получаем ребёнка для возраста
+        child = db.query(Child).filter(Child.id == book.child_id).first()
+        child_age = child.age if child else None
+        
+        # Получаем все сцены с финальными изображениями
+        scenes = db.query(Scene).filter(Scene.book_id == book_uuid).order_by(Scene.order).all()
+        
+        # Создаем список страниц для PDF
+        pages = []
+        final_images_data = []
+        
+        for scene in scenes:
+            # Получаем финальное изображение для сцены
+            image_record = db.query(ImageModel).filter(
+                ImageModel.book_id == book_uuid,
+                ImageModel.scene_order == scene.order
+            ).first()
+            
+            image_url = None
+            if image_record and image_record.final_url:
+                image_url = image_record.final_url
+                final_images_data.append({
+                    "order": scene.order,
+                    "image_url": image_url
+                })
+            
+            # Добавляем страницу в PDF (только если есть изображение)
+            if image_url:
+                # КРИТИЧНО: Используем ТОЛЬКО scene.text, НЕ short_summary и НЕ image_prompt
+                # Для обложки (order=0) текст игнорируется - название рисуется программно
+                scene_text = ""
+                if scene.order != 0:  # Не обложка
+                    scene_text = scene.text or ""  # ТОЛЬКО scene.text, без fallback на short_summary
+                    # Очищаем текст от возможных промптов
+                    if scene_text and ("Visual style" in scene_text or "IMPORTANT" in scene_text):
+                        logger.warning(f"⚠️ Сцена {scene.order} содержит промпт в text, используем short_summary")
+                        scene_text = scene.short_summary or ""
+                
+                pages.append(PdfPage(
+                    order=scene.order,
+                    text=scene_text,
+                    image_url=image_url,
+                    style=book_style,
+                    age=child_age
+                ))
+        
+        # Генерируем PDF
+        if pages:
+            pdf_dir = Path(BASE_UPLOAD_DIR) / "books" / str(book_uuid)
+            pdf_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path = pdf_dir / "final.pdf"
+            
+            # Генерируем PDF в отдельном потоке (синхронная операция)
+            await asyncio.to_thread(render_book_pdf, str(pdf_path), book.title or "StoryHero", pages, book_style, child_age)
+            
+            # Получаем публичный URL
+            base_url = get_server_base_url()
+            pdf_url = f"{base_url}/static/books/{book_uuid}/final.pdf"
+            
+            # Сохраняем в БД
+            book.final_pdf_url = pdf_url
+            book.images_final = {"images": final_images_data}
+            db.commit()
+            
+            logger.info(f"✅ PDF создан: {pdf_url}")
+        else:
+            logger.warning(f"⚠️ Нет изображений для создания PDF")
+        
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "completed",
+                "current_step": 8,
+                "total_steps": 8,
+                "message": "Книга успешно создана!",
+                "book_id": plot_result.book_id,
+                "pdf_url": book.final_pdf_url
+            })
+        
+        logger.info(f"✅ Книга успешно создана: book_id={plot_result.book_id}")
+        
         return {
-            "child_id": child_id,
-            "book_id": book_id_str,
-            "status": "success"  # Изменено: completed -> success для соответствия контракту
+            "book_id": plot_result.book_id,
+            "status": "success"
         }
-    except HTTPException as e:
-        # HTTPException имеет атрибут detail, извлекаем его
-        error_message = f"Ошибка при генерации книги: {e.detail}"
-        logger.error(f"❌ generate_full_book_task: {error_message}", exc_info=True)
-        logger.error(f"❌ generate_full_book_task: Детали ошибки - child_id={child_id}, user_id={user_id}, style={style}")
-        raise Exception(error_message)
+        
     except Exception as e:
-        error_message = f"Ошибка при генерации книги: {str(e)}"
-        logger.error(f"❌ generate_full_book_task: {error_message}", exc_info=True)
-        # Детальное логирование для диагностики
-        logger.error(f"❌ generate_full_book_task: Детали ошибки - child_id={child_id}, user_id={user_id}, style={style}")
-        raise Exception(error_message)
+        logger.error(f"❌ Ошибка в generate_full_book_task: {str(e)}", exc_info=True)
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "error",
+                "message": f"Ошибка: {str(e)}"
+            })
+        raise
 
 
 @router.post("/generate_full_book")
@@ -272,679 +772,122 @@ async def generate_full_book_endpoint(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Запустить полный цикл генерации книги для существующего ребёнка.
-    
-    Получает данные ребёнка из локальной БД по child_id.
-    
-    ВАЛИДАЦИЯ:
-    - Проверяет наличие child_id
-    - Проверяет существование ребёнка
-    - Проверяет права доступа (ребёнок принадлежит пользователю)
-    - Проверяет наличие обязательных полей (name, age)
-    - Проверяет дубликаты задач (если уже есть running задача для этого child_id)
+    Генерирует полную книгу асинхронно через задачу.
     
     Returns:
-        {
-            "task_id": "uuid",
-            "message": "Книга генерируется",
-            "child_id": "integer"
-        }
-    
-    Raises:
-        400: Неверный формат child_id или отсутствуют обязательные поля
-        401: Не авторизован
-        403: Ребёнок принадлежит другому пользователю
-        404: Ребёнок не найден
-        409: Уже есть активная задача генерации для этого ребёнка
-        500: Внутренняя ошибка сервера
+        dict: {"task_id": "...", "message": "..."}
     """
-    from ..models import Child
-    
-    import logging
-    logger = logging.getLogger(__name__)
-    
+    user_id = current_user.get("sub") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
+        
+    # Валидация темы (обязательное поле)
+    if not data.theme or not data.theme.strip():
+            raise HTTPException(
+                status_code=400,
+            detail="Тема книги обязательна. Пожалуйста, укажите, о чём будет книга."
+            )
+        
+    # Преобразуем child_id в integer
     try:
-        # 1. Проверка авторизации
-        user_id = current_user.get("sub") or current_user.get("id")
-        if not user_id:
-            logger.error("❌ generate_full_book: Отсутствует user_id в токене")
-            raise HTTPException(
-                status_code=401,
-                detail="Требуется авторизация. Пожалуйста, войдите в систему."
-            )
+        child_id_int = int(data.child_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Неверный формат child_id: {data.child_id}")
+    
+    # Получаем данные ребёнка
+    child = db.query(Child).filter(Child.id == child_id_int).first()
+    if not child:
+        raise HTTPException(status_code=404, detail=f"Ребёнок с id={data.child_id} не найден")
+    
+    if child.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Доступ запрещён. Этот ребёнок принадлежит другому пользователю.")
         
-        # 2. Валидация child_id
-        if not data.child_id:
-            logger.error("❌ generate_full_book: child_id не передан")
-            raise HTTPException(
-                status_code=400,
-                detail="Не указан ID ребёнка (child_id). Пожалуйста, выберите ребёнка для создания книги."
-            )
-        
-        try:
-            child_id_int = int(data.child_id)
-        except (ValueError, TypeError):
-            logger.error(f"❌ generate_full_book: Неверный формат child_id: {data.child_id}")
+    # Валидация num_pages
+    if data.num_pages not in [10, 20]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Неверный формат ID ребёнка: '{data.child_id}'. Ожидается число."
+            detail="Количество страниц должно быть 10 или 20"
             )
         
-        # 3. Проверка существования ребёнка
-        child = db.query(Child).filter(Child.id == child_id_int).first()
-        if not child:
-            logger.error(f"❌ generate_full_book: Ребёнок с ID {child_id_int} не найден")
-            raise HTTPException(
-                status_code=404,
-                detail=f"Ребёнок с ID {child_id_int} не найден. Пожалуйста, создайте профиль ребёнка."
-            )
-        
-        # 4. Проверка прав доступа
-        if child.user_id != user_id:
-            logger.error(f"❌ generate_full_book: Ребёнок {child_id_int} принадлежит другому пользователю")
-            raise HTTPException(
-                status_code=403,
-                detail="Доступ запрещён. Этот ребёнок принадлежит другому пользователю."
-            )
-        
-        # 5. Проверка обязательных полей
-        if not child.name or not child.name.strip():
-            logger.error(f"❌ generate_full_book: У ребёнка {child_id_int} отсутствует имя")
-            raise HTTPException(
-                status_code=400,
-                detail="У ребёнка не указано имя. Пожалуйста, заполните профиль ребёнка."
-            )
-        
-        if not child.age or child.age <= 0:
-            logger.error(f"❌ generate_full_book: У ребёнка {child_id_int} не указан возраст")
-            raise HTTPException(
-                status_code=400,
-                detail="У ребёнка не указан возраст. Пожалуйста, заполните профиль ребёнка."
-            )
-        
-        # 6. Проверка дубликатов задач (через find_running_task)
-        from ..services.tasks import find_running_task
-        existing_task = find_running_task({"user_id": user_id, "child_id": str(child_id_int)})
-        if existing_task:
-            logger.warning(f"⚠️ generate_full_book: Уже есть активная задача {existing_task['task_id']} для child_id={child_id_int}")
-            return {
-                "task_id": existing_task["task_id"],
-                "message": "Книга уже генерируется",
-                "child_id": str(child_id_int)
-            }
-        
-        # 7. Извлекаем данные из БД
-        name = child.name
-        age = child.age
-        interests = child.interests if isinstance(child.interests, list) else []
-        fears = child.fears if isinstance(child.fears, list) else []
-        personality = child.personality or ""
-        moral = child.moral or ""
-        face_url = child.face_url or ""
-        
-        # 7.1. Получаем все фотографии ребёнка (до 5 штук) для лучшего face swap
-        import os
-        from ..services.local_file_service import BASE_UPLOAD_DIR
-        child_photos = []
-        photos_dir = os.path.join(BASE_UPLOAD_DIR, "children", str(child_id_int))
-        if os.path.exists(photos_dir):
-            photo_files = [
-                f for f in os.listdir(photos_dir)
-                if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
-            ]
-            # Сортируем и берем до 5 фото
-            photo_files = sorted(photo_files)[:5]
-            from ..services.local_file_service import get_server_base_url
-            base_url = get_server_base_url()
-            child_photos = [
-                os.path.join(photos_dir, filename) for filename in photo_files
-            ]
-            logger.info(f"📸 Найдено фотографий ребёнка: {len(child_photos)}")
-        else:
-            # Если нет директории, используем face_url если есть
-            if face_url:
-                # Преобразуем URL в локальный путь
-                if "/static/children/" in face_url:
-                    filename = face_url.split("/static/children/")[1].split("/")[-1]
-                    photo_path = os.path.join(photos_dir, filename)
-                    if os.path.exists(photo_path):
-                        child_photos = [photo_path]
-                        logger.info(f"📸 Используем face_url как фото: {photo_path}")
-        
-        # 8. Валидация num_pages (только 10 или 20 — как на фронтенде)
-        num_pages = data.num_pages if hasattr(data, 'num_pages') and data.num_pages else 20
-        if num_pages not in (10, 20):
-            raise HTTPException(status_code=400, detail="Количество страниц должно быть 10 или 20")
-        
-        # 9. Валидация стиля (25 стилей) + алиасы (storybook -> classic)
-        normalized_style = normalize_style(data.style)
-        if not is_style_known(normalized_style):
-            raise HTTPException(status_code=400, detail=f"Неизвестный стиль: {data.style}. Доступные: {', '.join(ALL_STYLES)}")
-
-        # 9.1 Проверка подписки ПЕРЕД стартом генерации (и чистка истёкших подписок)
-        deactivate_if_expired(db, user_id)
-        if is_premium_style(normalized_style) and not check_style_access(db, user_id, normalized_style):
-            raise HTTPException(
-                status_code=403,
-                detail="Этот стиль доступен только по подписке. Оформите подписку за 199 ₽/мес"
-            )
-        
-        # 9. Метаданные для проверки дубликатов
-        meta = {"user_id": user_id, "child_id": str(child.id)}
-
-        # 10. Создаем новую задачу
-        logger.info(f"✅ generate_full_book: Создание задачи для child_id={child_id_int}, style={normalized_style}")
-        # Сначала создаем task_id, чтобы передать его в функцию
-        import uuid as uuid_module
-        task_id = str(uuid_module.uuid4())
-        task_id = create_task(
-            generate_full_book_task,
-            name,
-            age,
-            interests,
-            fears,
-            personality,
-            moral,
-            face_url,
-            normalized_style,
-            user_id,
-            db,
-            child_id=child_id_int,
-            num_pages=num_pages,
-            child_photos=child_photos,
-            meta=meta,
-            task_id=task_id
+    # Нормализация и валидация стиля
+    normalized_style = normalize_style(data.style)
+    if not is_style_known(normalized_style):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неизвестный стиль: {data.style}. Доступные: {', '.join(ALL_STYLES)}"
         )
-        
-        logger.info(f"✅ generate_full_book: Задача создана: task_id={task_id}")
+    
+    # Проверка подписки для премиум-стилей
+    deactivate_if_expired(db, user_id)
+    if is_premium_style(normalized_style) and not check_style_access(db, user_id, normalized_style):
+        raise HTTPException(
+            status_code=403,
+            detail="Этот стиль доступен только по подписке. Оформите подписку за 199 ₽/мес"
+        )
+    
+    # Получаем фотографии ребёнка
+    # КРИТИЧЕСКИ ВАЖНО: Используем ВСЕ фотографии для лучшего face swap!
+    face_url = child.face_url or ""
+    child_photos = []
+    
+    # Получаем все фотографии ребёнка через функцию из children.py
+    from ..routers.children import _get_child_photos_urls
+    try:
+        child_photos = _get_child_photos_urls(child_id_int)
+        logger.info(f"📸 Получено {len(child_photos)} фотографий ребёнка для face swap")
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось получить фотографии ребёнка: {str(e)}")
+        child_photos = []
+    
+    # Проверяем, нет ли уже запущенной задачи для этого ребёнка
+    from ..services.tasks import find_running_task
+    existing_task = find_running_task({
+        "type": "generate_full_book",
+        "user_id": user_id,
+        "child_id": str(child_id_int)
+    })
+    
+    if existing_task:
+        logger.warning(f"⚠️ generate_full_book: Уже есть активная задача {existing_task} для child_id={child_id_int}")
         return {
-            "task_id": task_id,
-            "message": "Книга генерируется",
+            "task_id": existing_task,
+            "message": "Книга уже генерируется",
             "child_id": str(child_id_int)
         }
-        
-    except HTTPException:
-        # Пробрасываем HTTP исключения как есть (они уже имеют правильные статусы и сообщения)
-        raise
-    except Exception as e:
-        logger.error(f"❌ generate_full_book: Неожиданная ошибка: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Внутренняя ошибка сервера при создании задачи генерации книги. Пожалуйста, попробуйте позже."
-        )
-
-
-@router.get("/task_status/{task_id}")
-def get_task_status_endpoint(
-    task_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Получить статус задачи генерации книги.
     
-    Требуется авторизация. Возвращает статус задачи (pending | running | success | error).
+    # Создаём задачу
+    meta = {
+        "type": "generate_full_book",
+        "user_id": user_id,
+        "child_id": str(child_id_int)
+    }
     
-    ВАЖНО: Статусы соответствуют контракту:
-    - pending: Задача создана, ожидает запуска
-    - running: Задача выполняется
-    - success: Задача успешно завершена
-    - error: Задача завершилась с ошибкой
+    task_id = create_task(
+        generate_full_book_task,
+        child.name,
+        child.age,
+        child.interests or [],
+        child.fears or [],
+        child.personality or "",
+        child.moral or "",
+        face_url,
+        normalized_style,
+        user_id,
+        db,
+        child_id=child_id_int,
+        num_pages=data.num_pages,
+        child_photos=child_photos,
+        theme=data.theme.strip(),  # Передаём тему книги
+        meta=meta,
+        task_id=None
+    )
     
-    Returns:
-        {
-            "status": "pending | running | success | error",
-            "created_at": "ISO datetime string",
-            "result": object | null,
-            "error": "string | null",
-            "completed_at": "ISO datetime string | null",
-            "meta": object,
-            "progress": {
-                "stage": "creating_profile | creating_plot | creating_text | text_ready | creating_prompts | selecting_style | generating_images | generating_final_images | images_ready",
-                "current_step": int,
-                "total_steps": int,
-                "message": string,
-                "images_generated": int,
-                "total_images": int,
-                "percent": int (0-100),
-                "book_id": string | null
-            }
-        }
+    logger.info(f"✅ Задача генерации книги создана: task_id={task_id}, child_id={child_id_int}, theme={data.theme.strip()}")
+    logger.warning(f"⚠️  ВАЖНО: Задача {task_id} запущена. Не перезапускайте контейнер до завершения генерации!")
     
-    Raises:
-        HTTPException 404: Если задача не найдена
-    """
-    task_status = get_task_status(task_id)
-    
-    if not task_status:
-        raise HTTPException(
-            status_code=404,
-            detail="Задача не найдена"
-        )
-    
-    # Гарантируем, что статус соответствует контракту
-    valid_statuses = ["pending", "running", "success", "error"]
-    current_status = task_status.get("status", "pending")
-    
-    # Нормализуем статус: completed -> success (для обратной совместимости)
-    if current_status == "completed":
-        task_status["status"] = "success"
-        current_status = "success"
-    
-    if current_status not in valid_statuses:
-        logger.warning(f"⚠️ get_task_status: Неожиданный статус задачи {task_id}: {current_status}, нормализуем в 'error'")
-        task_status["status"] = "error"
-    
-    # Вычисляем процент выполнения для фронтенда
-    progress = task_status.get("progress", {})
-    if progress:
-        current_step = progress.get("current_step", 0)
-        total_steps = progress.get("total_steps", 7)
-        images_generated = progress.get("images_generated", 0)
-        total_images = progress.get("total_images", 0)
-        stage = progress.get("stage", "starting")
-        pages_rendered = progress.get("pages_rendered", 0)
-        total_pages = progress.get("total_pages", 0)
-        
-        # Вычисляем общий процент
-        # Шаги 1-5 занимают 30% (по 6% на шаг)
-        # Шаги 6-7 (генерация изображений) занимают 70% (по 35% на шаг)
-        if stage in ["generating_images", "generating_final_images"]:
-            # При генерации изображений учитываем прогресс по изображениям
-            base_percent = 30  # Шаги 1-5 завершены
-            if stage == "generating_final_images":
-                base_percent = 65  # Шаги 1-6 завершены
-            
-            if total_images > 0:
-                image_progress = (images_generated / total_images) * 35
-            else:
-                image_progress = 0
-            
-            percent = int(base_percent + image_progress)
-        elif stage in ["rendering_pdf", "pdf_ready"]:
-            # PDF — финальный этап, отображаем как 90-100%
-            if total_pages and total_pages > 0:
-                pdf_progress = (pages_rendered / total_pages) * 10
-            else:
-                pdf_progress = 0
-            base_percent = 90
-            percent = int(base_percent + pdf_progress)
-        elif stage == "images_ready":
-            percent = 100
-        elif current_status == "success":
-            percent = 100
-        elif current_status == "error":
-            # Оставляем процент на момент ошибки
-            percent = int((current_step / total_steps) * 100) if total_steps > 0 else 0
-        else:
-            # Для этапов 1-5
-            percent = int((current_step / total_steps) * 30) if total_steps > 0 else 0
-        
-        # Гарантируем, что процент в диапазоне 0-100
-        percent = max(0, min(100, percent))
-        progress["percent"] = percent
-        
-        # Обновляем progress в ответе
-        task_status["progress"] = progress
-    else:
-        # Если progress пустой, добавляем базовый
-        task_status["progress"] = {
-            "stage": "starting",
-            "current_step": 0,
-            "total_steps": 7,
-            "message": "Инициализация...",
-            "images_generated": 0,
-            "total_images": 0,
-            "percent": 0
-        }
-    
-    return task_status
-
-
-# ============================================
-# CRUD ОПЕРАЦИИ ДЛЯ КНИГ
-# ============================================
-
-
-@router.get("/", response_model=list[BookOut])
-@router.get("", response_model=list[BookOut])  # Чтобы не было редиректа /books -> /books/
-def get_books(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Получить все книги текущего пользователя.
-    
-    Возвращает список всех книг из базы данных, принадлежащих текущему пользователю.
-    """
-    # Извлекаем user_id из токена
-    user_id = current_user.get("sub") or current_user.get("id")
-    
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
-    
-    # Book.user_id хранится как String, поэтому сравниваем строки
-    # Фильтруем книги по user_id текущего пользователя
-    try:
-        books = db.query(Book).filter(Book.user_id == str(user_id)).order_by(Book.created_at.desc()).all()
-        logger.info(f"✅ get_books: Найдено {len(books)} книг для user_id={user_id}")
-        return books
-    except Exception as e:
-        logger.error(f"❌ get_books: Ошибка при получении книг для user_id={user_id}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Внутренняя ошибка сервера при получении книг: {str(e)}"
-        )
-
-
-@router.get("/{book_id}", response_model=BookOut)
-def get_book(
-    book_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Получить книгу по ID.
-    
-    Args:
-        book_id: UUID книги
-        
-    Returns:
-        BookOut: Данные книги
-        
-    Raises:
-        HTTPException 404: Если книга не найдена или не принадлежит пользователю
-    """
-    user_id = str(current_user.get("sub") or current_user.get("id"))
-    book = db.query(Book).filter(
-        Book.id == book_id,
-        Book.user_id == user_id
-    ).first()
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found or access denied")
-    return book
-
-
-@router.get("/{book_id}/scenes", response_model=list[SceneOut])
-def get_book_scenes(
-    book_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Получить все сцены книги по ID.
-    
-    ВАЖНО: Все строковые поля ВСЕГДА возвращаются как строки (пустая строка "" если null),
-    чтобы гарантировать null-safety для фронтенда.
-    
-    Args:
-        book_id: UUID книги
-        
-    Returns:
-        List[SceneOut]: Массив сцен книги (не объект!)
-        
-    Raises:
-        HTTPException 404: Если книга не найдена или не принадлежит пользователю
-    """
-    from ..models import Scene
-    
-    user_id = str(current_user.get("sub") or current_user.get("id"))
-    
-    # Проверяем, что книга существует и принадлежит пользователю
-    book = db.query(Book).filter(
-        Book.id == book_id,
-        Book.user_id == user_id
-    ).first()
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found or access denied")
-    
-    # Получаем сцены книги
-    scenes = db.query(Scene).filter(
-        Scene.book_id == book_id
-    ).order_by(Scene.order).all()
-    
-    # Получаем все изображения для этих сцен (для получения image_url)
-    from ..models import Image
-    images = db.query(Image).filter(
-        Image.book_id == book_id
-    ).all()
-    # Создаем словарь для быстрого поиска: scene_order -> final_url
-    images_by_order = {img.scene_order: img.final_url for img in images if img.final_url}
-    
-    # Формируем ответ используя Pydantic модель для валидации и null-safety
-    scenes_response = []
-    for scene in scenes:
-        # Гарантируем, что все текстовые поля - строки (не null)
-        # Используем явную проверку на None и приведение к строке
-        short_summary = str(scene.short_summary) if scene.short_summary is not None else ""
-        text = str(scene.text) if scene.text is not None else ""
-        illustration_prompt = str(scene.image_prompt) if scene.image_prompt is not None else ""
-        
-        # Получаем image_url из связанного изображения
-        image_url = str(images_by_order.get(scene.order, "")) if images_by_order.get(scene.order) else ""
-        
-        # audio_url пока не используется (может быть добавлен позже)
-        audio_url = ""
-        
-        # title пока не используется (может быть добавлен позже)
-        title = ""
-        
-        # created_at может быть null, но возвращаем как строку или null явно
-        created_at_str = None
-        if scene.created_at is not None:
-            try:
-                created_at_str = scene.created_at.isoformat()
-            except (AttributeError, ValueError):
-                created_at_str = None
-        
-        # Создаем объект через Pydantic модель для валидации
-        scene_out = SceneOut(
-            id=int(scene.id),
-            order=int(scene.order),
-            title=title,
-            text=text,
-            short_summary=short_summary,
-            image_url=image_url,
-            audio_url=audio_url,
-            illustration_prompt=illustration_prompt,
-            created_at=created_at_str
-        )
-        
-        scenes_response.append(scene_out)
-    
-    # ВАЖНО: Возвращаем массив, а не объект {"scenes": [...]}
-    # Pydantic автоматически сериализует список SceneOut в JSON
-    return scenes_response
-
-
-@router.post("/", response_model=BookOut)
-def create_book(
-    data: BookCreate,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Создать новую книгу.
-    
-    Args:
-        data: Данные для создания книги (BookCreate)
-        
-    Returns:
-        BookOut: Созданная книга
-    """
-    user_id = current_user.get("sub") or current_user.get("id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
-    book_data = data.model_dump()
-    book_data["user_id"] = user_id  # Привязываем к текущему пользователю
-    book = Book(**book_data)
-    db.add(book)
-    db.commit()
-    db.refresh(book)
-    return book
-
-
-@router.put("/{book_id}", response_model=BookOut)
-def update_book(
-    book_id: UUID,
-    data: BookUpdate,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Обновить книгу по ID.
-    
-    Args:
-        book_id: UUID книги
-        data: Данные для обновления (BookUpdate)
-        
-    Returns:
-        BookOut: Обновлённая книга
-        
-    Raises:
-        HTTPException 404: Если книга не найдена или не принадлежит пользователю
-    """
-    user_id = str(current_user.get("sub") or current_user.get("id"))
-    book = db.query(Book).filter(
-        Book.id == book_id,
-        Book.user_id == user_id
-    ).first()
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found or access denied")
-
-    # Обновляем только переданные поля
-    update_data = data.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(book, key, value)
-
-    db.commit()
-    db.refresh(book)
-    return book
-
-
-@router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_book(
-    book_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Удалить книгу по ID (идемпотентная операция).
-    
-    Требуется авторизация. Пользователь может удалять только свои книги.
-    При удалении книги также удаляются все связанные данные:
-    - Сцены (scenes)
-    - Изображения (images)
-    - Стили (theme_styles)
-    - Файлы на диске (PDF, изображения)
-    
-    ИДЕМПОТЕНТНОСТЬ:
-    - Если книга уже удалена → возвращает 204 (успешно)
-    - Если книга не найдена → возвращает 410 Gone (уже удалена)
-    - Если книга принадлежит другому пользователю → возвращает 403
-    
-    Args:
-        book_id: UUID книги
-        
-    Returns:
-        204 No Content - при успешном удалении или если уже удалена
-        
-    Raises:
-        HTTPException 401: Если не авторизован
-        HTTPException 403: Если нет прав на удаление (книга принадлежит другому пользователю)
-        HTTPException 410: Если книга не найдена (уже удалена)
-        HTTPException 500: При внутренней ошибке сервера
-    """
-    
-    # Извлекаем user_id из токена
-    user_id = current_user.get("sub") or current_user.get("id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Требуется авторизация")
-    
-    try:
-        # Найти книгу по ID
-        book = db.query(Book).filter(Book.id == book_id).first()
-        
-        # ИДЕМПОТЕНТНОСТЬ: Если книга не найдена, считаем что уже удалена
-        if not book:
-            # Возвращаем 204 (успешно) для идемпотентности
-            # Альтернатива: можно вернуть 410 Gone, но 204 более безопасен для UI
-            return None
-        
-        # Проверить права доступа
-        if book.user_id != user_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Нет прав на удаление этой книги"
-            )
-        
-        # Логируем операцию удаления
-        logger.info(f"Удаление книги {book_id} пользователем {user_id}")
-        
-        # Собираем все URL файлов для удаления
-        files_to_delete = []
-        
-        # PDF файл книги
-        if book.final_pdf_url:
-            files_to_delete.append(book.final_pdf_url)
-        
-        # Обложка книги
-        if book.cover_url:
-            files_to_delete.append(book.cover_url)
-        
-        # Получаем все изображения книги перед удалением
-        images = db.query(Image).filter(Image.book_id == book_id).all()
-        for image in images:
-            if image.draft_url:
-                files_to_delete.append(image.draft_url)
-            if image.final_url:
-                files_to_delete.append(image.final_url)
-        
-        # Удаляем файлы на диске
-        for file_url in files_to_delete:
-            try:
-                # Извлекаем относительный путь из URL
-                # Формат URL: http://host:port/static/path/to/file
-                if "/static/" in file_url:
-                    relative_path = file_url.split("/static/", 1)[1]
-                    file_path = os.path.join(BASE_UPLOAD_DIR, relative_path)
-                    
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                        logger.info(f"Удален файл: {file_path}")
-                    else:
-                        logger.warning(f"Файл не найден на диске: {file_path}")
-            except Exception as e:
-                # Не критично, если файл не удалось удалить
-                logger.warning(f"Не удалось удалить файл {file_url}: {str(e)}")
-        
-        # Удаление связанных данных происходит автоматически через CASCADE
-        # Scene, Image, ThemeStyle удалятся автоматически благодаря ondelete="CASCADE"
-        
-        # Сохраняем информацию о книге для логирования
-        book_title = book.title
-        book_child_id = book.child_id
-        
-        # Удаляем книгу из БД
-        db.delete(book)
-        # Явно делаем flush перед commit для гарантии атомарности
-        db.flush()
-        db.commit()
-        
-        logger.info(f"✅ Книга {book_id} (title: '{book_title}', child_id: {book_child_id}) успешно удалена из БД")
-        logger.info(f"   После удаления книга больше не будет возвращаться в списках GET /books и GET /children/{{child_id}}/books")
-        
-        # 204 No Content - пустое тело ответа
-        # Клиент должен обновить список книг после получения этого статуса
-        return None
-        
-    except HTTPException:
-        # Пробрасываем HTTP исключения как есть
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Ошибка при удалении книги {book_id}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Внутренняя ошибка сервера"
-        )
-
+    return {
+        "task_id": task_id,
+        "message": "Генерация книги запущена",
+        "child_id": str(child_id_int),
+        "warning": "⚠️ Не перезапускайте контейнер до завершения генерации!"
+    }

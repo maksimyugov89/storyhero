@@ -6,7 +6,7 @@ import json
 
 from ..db import get_db
 from ..models import Child
-from ..services.deepseek_service import generate_text
+from ..services.gemini_service import generate_text
 from ..core.deps import get_current_user
 
 router = APIRouter(prefix="", tags=["profile"])
@@ -65,7 +65,7 @@ async def _create_profile_internal(
   "profile_summary": "краткое резюме профиля ребёнка"
 }}"""
 
-        # Вызываем DeepSeek API
+        # Вызываем Gemini API
         gpt_response = await generate_text(user_prompt, system_prompt, json_mode=True)
         
         # Проверяем, что ответ не пустой

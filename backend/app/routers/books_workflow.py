@@ -4,19 +4,20 @@ draft → editing → finalization → paid
 """
 import logging
 import json
-from typing import Optional, Dict, Any
+import os
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from ..db import get_db
-from ..models import Book, Child, Scene, Image
-# Удалено: больше не используем Supabase
-from ..services.deepseek_service import generate_text
+from ..models import Book, Child, Scene, Image, ThemeStyle
+from ..services.gemini_service import generate_text
 from ..services.image_pipeline import generate_draft_image, generate_final_image
-from ..services.local_file_service import upload_image_bytes
+from ..services.storage import upload_image as upload_image_bytes
 from ..core.deps import get_current_user
+from ..services.tasks import create_task, update_task_progress
 from datetime import datetime
 from ..config.styles import (
     normalize_style,
@@ -34,7 +35,7 @@ router = APIRouter(prefix="/books", tags=["books_workflow"])
 
 class GenerateDraftRequest(BaseModel):
     """Запрос на генерацию черновика книги"""
-    child_id: str  # UUID из Supabase children
+    child_id: str  # ID ребёнка (Integer)
     style: str = "classic"
     num_pages: int = 20  # 10 или 20 страниц (сцен) без обложки
     theme: Optional[str] = None
@@ -44,8 +45,27 @@ class GenerateDraftRequest(BaseModel):
 
 class RegenerateSceneRequest(BaseModel):
     """Запрос на перегенерацию сцены"""
-    scene_number: int
-    detail_prompt: str
+    # Поддерживаем оба варианта для совместимости с фронтендом
+    scene_number: Optional[int] = None
+    scene_index: Optional[int] = None  # Альтернативное имя от фронтенда
+    detail_prompt: Optional[str] = None
+    instruction: Optional[str] = None  # Альтернативное имя от фронтенда
+    
+    def get_scene_number(self) -> int:
+        """Возвращает номер сцены из любого поля"""
+        if self.scene_number is not None:
+            return self.scene_number
+        if self.scene_index is not None:
+            return self.scene_index
+        raise ValueError("scene_number или scene_index обязательны")
+    
+    def get_detail_prompt(self) -> str:
+        """Возвращает промпт из любого поля"""
+        if self.detail_prompt:
+            return self.detail_prompt
+        if self.instruction:
+            return self.instruction
+        raise ValueError("detail_prompt или instruction обязательны")
 
 
 class UpdateTextRequest(BaseModel):
@@ -131,7 +151,7 @@ async def generate_draft(
         from ..routers.plot import _create_plot_internal
         from ..routers.plot import CreatePlotRequest
         
-        plot_request = CreatePlotRequest(child_id=child.id, num_pages=data.num_pages)  # Используем Integer id из PostgreSQL
+        plot_request = CreatePlotRequest(child_id=child.id, num_pages=data.num_pages, theme=data.theme.strip() if data.theme and data.theme.strip() else None)  # Используем Integer id из PostgreSQL
         plot_result = await _create_plot_internal(plot_request, db, user_id)
         
         # Преобразуем book_id из строки в UUID
@@ -185,11 +205,16 @@ async def generate_draft(
         cover_url = None
         
         for scene in scenes:
-            if not scene.image_prompt:
-                continue
+            if not scene.image_prompt or not scene.image_prompt.strip():
+                logger.warning(f"⚠️ Пропущена сцена order={scene.order} без промпта для book_id={book_uuid}")
+                # Создаем fallback промпт для сцены без промпта
+                scene.image_prompt = f"Illustration for scene {scene.order}: {scene.text[:200] if scene.text else scene.short_summary or 'story scene'}"
+                db.commit()
+                logger.info(f"✅ Создан fallback промпт для сцены order={scene.order}")
             
             # Формируем промпт с выбранным стилем
-            enhanced_prompt = f"Visual style: {normalized_style}. {scene.image_prompt}"
+            # КРИТИЧНО: НЕ используем "Visual style:" - эта фраза попадает в изображение как текст!
+            enhanced_prompt = f"{normalized_style} style. {scene.image_prompt}"
             
             # Генерируем черновое изображение через image_pipeline
             image_url = await generate_draft_image(enhanced_prompt, style=normalized_style)
@@ -227,7 +252,7 @@ async def generate_draft(
         book.content = "\n\n".join([p.get("text", "") for p in pages_data])
         book.cover_url = cover_url
         book.prompt = f"Стиль: {normalized_style}, Тема: {data.theme or 'универсальная'}"
-        book.ai_model = "openrouter-flux"
+        book.ai_model = "fal-ai-flux-pro"
         book.variables_used = {
             "style": normalized_style,
             "theme": data.theme,
@@ -297,7 +322,14 @@ async def regenerate_scene(
     Returns:
         BookOut: Обновлённая книга
     """
-    logger.info(f"🖼️ Перегенерация сцены {data.scene_number} для книги {book_id}")
+    # Получаем номер сцены и промпт (поддерживаем оба варианта)
+    try:
+        scene_number = data.get_scene_number()
+        detail_prompt = data.get_detail_prompt()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    
+    logger.info(f"🖼️ Перегенерация сцены {scene_number} для книги {book_id}")
     
     # Преобразуем строку book_id в UUID
     from uuid import UUID as UUIDType
@@ -325,11 +357,11 @@ async def regenerate_scene(
     # Получаем сцену
     scene = db.query(Scene).filter(
         Scene.book_id == book_uuid,
-        Scene.order == data.scene_number
+        Scene.order == scene_number
     ).first()
     
     if not scene:
-        raise HTTPException(status_code=404, detail=f"Сцена {data.scene_number} не найдена")
+        raise HTTPException(status_code=404, detail=f"Сцена {scene_number} не найдена")
     
     # Получаем стиль книги
     style_raw = book.variables_used.get("style", "classic") if book.variables_used else "classic"
@@ -347,7 +379,7 @@ async def regenerate_scene(
     
     # Формируем улучшенный промпт
     base_prompt = scene.image_prompt or ""
-    enhanced_prompt = f"{base_prompt}. {data.detail_prompt}. Visual style: {style}."
+    enhanced_prompt = f"{base_prompt}. {detail_prompt}. Visual style: {style}."
     
     # Генерируем новое изображение через image_pipeline
     try:
@@ -356,7 +388,7 @@ async def regenerate_scene(
         # Обновляем Image запись
         image_record = db.query(Image).filter(
             Image.book_id == book_uuid,
-            Image.scene_order == data.scene_number
+            Image.scene_order == scene_number
         ).first()
         
         if image_record:
@@ -364,7 +396,7 @@ async def regenerate_scene(
         else:
             image_record = Image(
                 book_id=book_uuid,
-                scene_order=data.scene_number,
+                scene_order=scene_number,
                 draft_url=new_image_url
             )
             db.add(image_record)
@@ -373,22 +405,22 @@ async def regenerate_scene(
         if book.pages and "pages" in book.pages:
             pages_list = book.pages["pages"]
             for page in pages_list:
-                if page.get("order") == data.scene_number:
+                if page.get("order") == scene_number:
                     page["image_url"] = new_image_url
-                    page["detail_prompt"] = data.detail_prompt
+                    page["detail_prompt"] = detail_prompt
                     break
         else:
             # Если pages пустой, создаём структуру
             if not book.pages:
                 book.pages = {"pages": []}
             book.pages["pages"].append({
-                "order": data.scene_number,
+                "order": scene_number,
                 "image_url": new_image_url,
-                "detail_prompt": data.detail_prompt
+                "detail_prompt": detail_prompt
             })
         
         # Сохраняем detail_prompt в книге
-        book.detail_prompt = data.detail_prompt
+        book.detail_prompt = detail_prompt
         
         # Добавляем операцию в edit_history
         if not book.edit_history:
@@ -398,8 +430,8 @@ async def regenerate_scene(
             "type": "regenerate_scene",
             "timestamp": datetime.utcnow().isoformat(),
             "details": {
-                "scene_number": data.scene_number,
-                "detail_prompt": data.detail_prompt,
+                "scene_number": scene_number,
+                "detail_prompt": detail_prompt,
                 "new_image_url": new_image_url
             }
         })
@@ -407,10 +439,29 @@ async def regenerate_scene(
         db.commit()
         db.refresh(book)
         
-        logger.info(f"✓ Сцена {data.scene_number} перегенерирована")
+        logger.info(f"✓ Сцена {scene_number} перегенерирована")
         
-        from ..schemas.book import BookOut
-        return BookOut.model_validate(book)
+        # Получаем image_url из Image модели (если есть)
+        image_record = db.query(Image).filter(
+            Image.book_id == book_uuid,
+            Image.scene_order == scene_number
+        ).first()
+        
+        image_url = None
+        if image_record:
+            image_url = image_record.final_url or image_record.draft_url
+        
+        # Возвращаем обновлённую сцену в формате, ожидаемом фронтендом
+        return {
+            "id": str(scene.id),
+            "book_id": str(scene.book_id),
+            "order": scene.order,
+            "short_summary": scene.short_summary or "",
+            "text": scene.text,
+            "image_prompt": scene.image_prompt,
+            "draft_url": image_record.draft_url if image_record else None,
+            "image_url": image_url
+        }
         
     except Exception as e:
         logger.error(f"✗ Ошибка при перегенерации сцены: {str(e)}", exc_info=True)
@@ -504,7 +555,7 @@ async def update_text(
 4. Верни текст в формате JSON с ключом "scenes", где каждый элемент - словарь с полями "order" и "text"
 """
         
-        # Вызываем DeepSeek API
+        # Вызываем Gemini API
         response_text = await generate_text(prompt, json_mode=True, max_tokens=2000)
         
         # Парсим ответ
@@ -645,10 +696,18 @@ async def update_scene_text(
         raise HTTPException(status_code=404, detail="Профиль ребёнка не найден")
     
     try:
-        # Генерируем новый текст через DeepSeek
-        current_text = scene.text or scene.short_summary or ""
-        
-        prompt = f"""Перепиши следующий текст сцены детской книги согласно инструкциям.
+        # Проверяем, является ли инструкция прямым указанием использовать конкретный текст
+        # Формат: "Использовать этот текст: <текст>"
+        text_instructions = data.text_instructions.strip()
+        if text_instructions.startswith("Использовать этот текст:"):
+            # Извлекаем текст напрямую без вызова AI
+            new_text = text_instructions.replace("Использовать этот текст:", "").strip()
+            logger.info(f"📝 Прямое сохранение текста для сцены {scene_index} (без генерации через AI)")
+        else:
+            # Генерируем новый текст через Gemini
+            current_text = scene.text or scene.short_summary or ""
+            
+            prompt = f"""Перепиши следующий текст сцены детской книги согласно инструкциям.
 
 Текущий текст сцены:
 {current_text}
@@ -667,9 +726,9 @@ async def update_scene_text(
 2. Сохрани общий стиль и тон текста
 3. Адаптируй текст под возраст {child.age if child else 7} лет
 4. Верни ТОЛЬКО новый текст сцены, без дополнительных пояснений или комментариев."""
-        
-        new_text = await generate_text(prompt, json_mode=False, max_tokens=1000)
-        new_text = new_text.strip()
+            
+            new_text = await generate_text(prompt, json_mode=False, max_tokens=1000)
+            new_text = new_text.strip()
         
         if not new_text or len(new_text) < 10:
             raise HTTPException(
@@ -680,6 +739,8 @@ async def update_scene_text(
         # Обновляем сцену
         scene.text = new_text
         scene.short_summary = new_text[:200] if len(new_text) > 200 else new_text
+        
+        logger.info(f"📝 Обновление сцены {scene_index}: text длина={len(new_text)}, short_summary длина={len(scene.short_summary)}")
         
         # Обновляем content книги (собираем все тексты сцен)
         scenes = db.query(Scene).filter(
@@ -746,7 +807,261 @@ async def update_scene_text(
 
 
 # ============================================
-# 5. POST /books/{book_id}/finalize
+# 5. POST /books/{book_id}/generate_final_version
+# ============================================
+
+class GenerateFinalVersionResponse(BaseModel):
+    """Ответ на запрос генерации финальной версии"""
+    task_id: str
+    message: str
+    book_id: str
+
+
+async def generate_final_version_task(
+    book_id: str,
+    user_id: str,
+    db: Session,
+    task_id: Optional[str] = None
+):
+    """
+    Асинхронная задача для генерации финальной версии книги.
+    Генерирует финальные изображения для всех сцен с учетом изменений пользователя.
+    
+    Args:
+        book_id: ID книги (UUID как строка)
+        user_id: ID пользователя
+        db: Сессия БД
+        task_id: ID задачи для отслеживания прогресса
+    """
+    from uuid import UUID as UUIDType
+    
+    try:
+        # Преобразуем book_id в UUID
+        try:
+            book_uuid = UUIDType(book_id) if isinstance(book_id, str) else book_id
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Неверный формат book_id: {book_id}")
+        
+        # Обновляем прогресс
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "preparing",
+                "current_step": 1,
+                "total_steps": 3,
+                "message": "Подготовка данных для генерации финальной версии..."
+            })
+        
+        # Проверяем, что книга существует и принадлежит пользователю
+        book = db.query(Book).filter(
+            Book.id == book_uuid,
+            Book.user_id == str(user_id)
+        ).first()
+        
+        if not book:
+            raise HTTPException(status_code=404, detail="Книга не найдена или доступ запрещён")
+        
+        # Проверяем статус книги
+        if book.status not in ['draft', 'editing']:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Книга не может быть отправлена на генерацию. Текущий статус: {book.status}"
+            )
+        
+        # Получаем все сцены книги
+        scenes = db.query(Scene).filter(
+            Scene.book_id == book_uuid
+        ).order_by(Scene.order).all()
+        
+        if not scenes:
+            raise HTTPException(
+                status_code=422,
+                detail="У книги нет сцен для генерации"
+            )
+        
+        # Получаем данные ребенка
+        child = None
+        face_url = None
+        child_photos = []
+        
+        if book.child_id:
+            child = db.query(Child).filter(Child.id == book.child_id).first()
+            if child:
+                face_url = child.face_url
+                # Получаем все фотографии ребенка через функцию из children.py
+                try:
+                    from ..routers.children import _get_child_photos_urls
+                    child_photos = _get_child_photos_urls(book.child_id)
+                    logger.info(f"📸 Получено {len(child_photos)} фотографий ребёнка для face swap")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось получить фотографии ребёнка: {str(e)}")
+                    child_photos = []
+        
+        # Получаем стиль книги
+        theme_style = db.query(ThemeStyle).filter(ThemeStyle.book_id == book_uuid).first()
+        final_style = theme_style.final_style if theme_style else 'disney'
+        
+        # Обновляем прогресс
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "generating_images",
+                "current_step": 2,
+                "total_steps": 3,
+                "message": f"Генерация финальных изображений для {len(scenes)} сцен..."
+            })
+        
+        logger.info(f"🎨 Начало генерации финальной версии для книги {book_id}")
+        logger.info(f"   Стиль: {final_style}")
+        logger.info(f"   Сцен: {len(scenes)}")
+        logger.info(f"   Лицо ребенка: {'есть' if face_url else 'нет'}")
+        
+        # Используем существующую функцию генерации финальных изображений
+        from ..routers.final_images import _generate_final_images_internal
+        
+        result = await _generate_final_images_internal(
+            book_id=book_id,
+            db=db,
+            current_user_id=str(user_id),
+            final_style=final_style,
+            face_url=face_url,
+            task_id=task_id,
+            child_photos=child_photos if child_photos else None
+        )
+        
+        # Обновляем статус книги на 'editing' после завершения генерации
+        book.status = 'editing'
+        db.commit()
+        
+        # Обновляем прогресс
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "completed",
+                "current_step": 3,
+                "total_steps": 3,
+                "message": "Генерация финальной версии завершена успешно!"
+            })
+        
+        logger.info(f"✅ Генерация финальной версии для книги {book_id} завершена")
+        
+        return {
+            "book_id": str(book_id),
+            "status": "editing",
+            "images_generated": len(result.get("generated_images", []))
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка в generate_final_version_task: {str(e)}", exc_info=True)
+        if task_id:
+            update_task_progress(task_id, {
+                "stage": "error",
+                "message": f"Ошибка генерации: {str(e)}"
+            })
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка генерации финальной версии: {str(e)}"
+        )
+
+
+@router.post("/{book_id}/generate_final_version", response_model=GenerateFinalVersionResponse)
+async def generate_final_version(
+    book_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Отправить книгу на генерацию финальной версии.
+    
+    Генерирует финальные изображения для всех сцен с учетом всех изменений пользователя:
+    - Текущий текст сцен (после всех правок)
+    - Перегенерированные изображения (если пользователь их изменил)
+    - Лицо ребенка из child.face_url
+    - Стиль книги (из ThemeStyle или дефолтный 'disney')
+    
+    Требования:
+    - Книга должна иметь статус 'draft' или 'editing'
+    - У книги должны быть сцены
+    
+    Returns:
+        GenerateFinalVersionResponse: task_id для отслеживания прогресса
+    """
+    user_id = current_user.get("sub") or current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Не авторизован")
+    
+    # Преобразуем book_id в UUID
+    from uuid import UUID as UUIDType
+    try:
+        book_uuid = UUIDType(book_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail=f"Неверный формат book_id: {book_id}")
+    
+    # Проверяем, что книга существует и принадлежит пользователю
+    book = db.query(Book).filter(
+        Book.id == book_uuid,
+        Book.user_id == str(user_id)
+    ).first()
+    
+    if not book:
+        raise HTTPException(status_code=404, detail="Книга не найдена или доступ запрещён")
+    
+    # Проверяем статус книги
+    if book.status not in ['draft', 'editing']:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Книга не может быть отправлена на генерацию. Текущий статус: {book.status}. Ожидается 'draft' или 'editing'."
+        )
+    
+    # Проверяем наличие сцен
+    scenes = db.query(Scene).filter(Scene.book_id == book_uuid).all()
+    if not scenes:
+        raise HTTPException(
+            status_code=422,
+            detail="У книги нет сцен для генерации"
+        )
+    
+    # Проверяем, нет ли уже запущенной задачи для этой книги
+    from ..services.tasks import find_running_task
+    existing_task = find_running_task({
+        "type": "generate_final_version",
+        "book_id": str(book_uuid),
+        "user_id": str(user_id)
+    })
+    
+    if existing_task:
+        logger.warning(f"⚠️ generate_final_version: Уже есть активная задача {existing_task} для book_id={book_id}")
+        return GenerateFinalVersionResponse(
+            task_id=existing_task,
+            message="Генерация финальной версии уже запущена",
+            book_id=book_id
+        )
+    
+    # Создаем задачу генерации
+    task_id = create_task(
+        generate_final_version_task,
+        book_id=book_id,
+        user_id=str(user_id),
+        db=db,
+        meta={
+            "type": "generate_final_version",
+            "book_id": str(book_uuid),
+            "user_id": str(user_id)
+        },
+        task_id=None
+    )
+    
+    logger.info(f"✅ Задача генерации финальной версии создана: task_id={task_id}, book_id={book_id}")
+    logger.warning(f"⚠️  ВАЖНО: Задача {task_id} запущена. Не перезапускайте контейнер до завершения генерации!")
+    
+    return GenerateFinalVersionResponse(
+        task_id=task_id,
+        message="Генерация финальной версии запущена",
+        book_id=book_id
+    )
+
+
+# ============================================
+# 6. POST /books/{book_id}/finalize
 # ============================================
 
 @router.post("/{book_id}/finalize")
@@ -813,18 +1128,11 @@ async def finalize_book(
         from ..routers.final_images import GenerateFinalImagesRequest, generate_final_images_endpoint
         
         # Получаем face_url ребёнка из PostgreSQL Child модели
-        # Примечание: book.child_id это Integer из PostgreSQL, не UUID из Supabase
-        # face_url должен быть получен из Child модели или из данных, переданных при создании книги
         face_url = None
         try:
             child = db.query(Child).filter(Child.id == book.child_id).first()
-            # Если в Child нет face_url, можно попробовать получить из Supabase по имени
-            # Но это не надежно, поэтому используем данные, которые уже есть
             if child:
-                # face_url хранится в Supabase, не в PostgreSQL Child
-                # Для получения face_url нужно использовать Supabase UUID, который мы не храним
-                # Временно используем None, face_url должен быть передан при создании книги
-                pass
+                face_url = child.face_url
         except Exception as e:
             logger.warning(f"Не удалось получить данные ребёнка: {e}")
             face_url = None
@@ -859,11 +1167,35 @@ async def finalize_book(
         # Сохраняем images_final
         book.images_final = {"images": final_images_data}
         
-        # Генерируем PDF (упрощённая версия - в реальности нужна библиотека для генерации PDF)
-        # TODO: Интегрировать реальную генерацию PDF (например, reportlab или weasyprint)
-        # Сейчас создаём placeholder URL
-        pdf_url = f"/static/books/{book.id}/final.pdf"
-        book.final_pdf_url = pdf_url
+        # КРИТИЧНО: Генерируем PDF используя существующий скрипт
+        logger.info(f"📄 Генерация PDF для книги {book_id}...")
+        try:
+            from ..scripts.generate_pdf_for_book import generate_pdf
+            
+            # Генерируем PDF (функция возвращает exit code 0 или 1)
+            exit_code = await generate_pdf(str(book_uuid))
+            
+            if exit_code == 0:
+                # Обновляем книгу из БД, чтобы получить актуальный final_pdf_url
+                db.refresh(book)
+                if book.final_pdf_url:
+                    pdf_url = book.final_pdf_url
+                    logger.info(f"✅ PDF успешно сгенерирован: {pdf_url}")
+                else:
+                    # Если URL не обновился, создаём placeholder
+                    logger.warning(f"⚠️ PDF сгенерирован, но URL не обновлён, создаём placeholder")
+                    pdf_url = f"/static/books/{book.id}/final.pdf"
+                    book.final_pdf_url = pdf_url
+            else:
+                # Если генерация не удалась, создаём placeholder
+                logger.warning(f"⚠️ PDF не сгенерирован (exit_code={exit_code}), создаём placeholder")
+                pdf_url = f"/static/books/{book.id}/final.pdf"
+                book.final_pdf_url = pdf_url
+        except Exception as pdf_error:
+            logger.error(f"❌ Ошибка при генерации PDF: {pdf_error}", exc_info=True)
+            # В случае ошибки создаём placeholder, чтобы не блокировать финализацию
+            pdf_url = f"/static/books/{book.id}/final.pdf"
+            book.final_pdf_url = pdf_url
         
         # Устанавливаем статус "final"
         book.status = "final"

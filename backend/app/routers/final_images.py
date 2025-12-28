@@ -78,8 +78,9 @@ async def _generate_final_images_internal(
     
     results = []
     
-    # Подсчитываем сцены с промптами
-    scenes_with_prompts = [s for s in scenes if s.image_prompt]
+    # Подсчитываем сцены с промптами (включая обложку с order=0)
+    # Обложка должна быть первой, поэтому сортируем по order
+    scenes_with_prompts = sorted([s for s in scenes if s.image_prompt], key=lambda x: x.order)
     
     # Обновляем прогресс с общим количеством изображений
     if task_id:
@@ -100,35 +101,113 @@ async def _generate_final_images_internal(
             )
         
         # Формируем промпт с финальным стилем
-        enhanced_prompt = f"Visual style: {final_style}. {scene.image_prompt}"
+        # Для обложки (order=0) добавляем название книги в промпт, чтобы оно было частью изображения
+        # Усиливаем указание возраста и пола ребенка в промпте
+        from ..models import Child
+        child = db.query(Child).filter(Child.id == book_check.child_id).first() if book_check.child_id else None
+        gender_text = "boy" if child and child.gender == "male" else "girl"
+        age_emphasis = f"IMPORTANT: The child character must look exactly {child.age} years old {gender_text} with child proportions: large head relative to body, short legs, small hands, chubby cheeks, big eyes. The character must be a {gender_text}, not the opposite gender! " if child and child.age else ""
+        
+        # Используем sanitizer для обложки
+        from ..services.scene_utils import is_cover_scene
+        from ..services.prompt_sanitizer import build_cover_prompt
+        
+        if is_cover_scene(scene):
+            # Для обложки используем специальную функцию build_cover_prompt
+            # которая полностью очищает промпт от инструкций о тексте
+            enhanced_prompt = build_cover_prompt(
+                base_style=final_style,
+                scene_prompt=scene.image_prompt or "",
+                age_emphasis=age_emphasis
+            )
+            logger.info(f"🧼 Cover prompt built using sanitizer (order={scene.order})")
+        else:
+            # Для новых премиум стилей (marvel, dc, anime) используем специальные промпты
+            if final_style in ['marvel', 'dc', 'anime']:
+                from ..services.style_prompts import get_style_prompt
+                enhanced_prompt = get_style_prompt(final_style, scene.image_prompt or "", is_cover=False)
+                if age_emphasis:
+                    enhanced_prompt = f"{age_emphasis}{enhanced_prompt}"
+            else:
+                # Для новых премиум стилей (marvel, dc, anime) используем специальные промпты
+                if final_style in ['marvel', 'dc', 'anime']:
+                    from ..services.style_prompts import get_style_prompt
+                    enhanced_prompt = get_style_prompt(final_style, scene.image_prompt or "", is_cover=False)
+                    if age_emphasis:
+                        enhanced_prompt = f"{age_emphasis}{enhanced_prompt}"
+                else:
+                    # Для остальных стилей используем стандартный формат
+                    enhanced_prompt = f"Visual style: {final_style}. {age_emphasis}{scene.image_prompt}"
         
         # Генерируем финальное изображение через image_pipeline с face swap
-        # Получаем путь к фото ребёнка из face_url
+        # КРИТИЧЕСКИ ВАЖНО: Используем ВСЕ фотографии ребёнка для лучшего сходства!
         child_photo_path = None
+        child_photo_paths_list = []
+        
+        # Получаем путь к фото ребёнка из face_url (для обратной совместимости)
         if face_url:
             # Извлекаем путь из URL (формат: http://host:port/static/children/{child_id}/filename.jpg)
             if "/static/" in face_url:
                 relative_path = face_url.split("/static/", 1)[1]
-                from ..services.local_file_service import BASE_UPLOAD_DIR
+                from ..services.storage import BASE_UPLOAD_DIR
                 child_photo_path = os.path.join(BASE_UPLOAD_DIR, relative_path)
         
+        # Конвертируем все URL фотографий в пути к файлам
+        if child_photos:
+            from ..services.storage import BASE_UPLOAD_DIR
+            for photo_url in child_photos:
+                if isinstance(photo_url, str) and "/static/" in photo_url:
+                    relative_path = photo_url.split("/static/", 1)[1]
+                    photo_path = os.path.join(BASE_UPLOAD_DIR, relative_path)
+                    if os.path.exists(photo_path):
+                        child_photo_paths_list.append(photo_path)
+                        logger.info(f"✓ Добавлена фотография для face swap: {photo_path}")
+                    else:
+                        logger.warning(f"⚠️ Файл фотографии не найден: {photo_path}")
+        
+        logger.info(f"🎭 Использование {len(child_photo_paths_list)} фотографий ребёнка для face swap на изображении сцены order={scene.order}")
+        
         try:
-            logger.info(f"🖼️ Генерация финального изображения для сцены order={scene.order}")
+            logger.info(f"🖼️ Генерация финального изображения для сцены order={scene.order} (сцена {idx}/{len(scenes_with_prompts)})")
             
-            # Обновляем прогресс
-            if task_id:
-                from ..services.tasks import update_task_progress
-                update_task_progress(task_id, {
-                    "images_generated": idx - 1,
-                    "message": f"Генерация финального изображения {idx}/{len(scenes_with_prompts)} с face swap..."
-                })
-            
-            final_url = await generate_final_image(
-                enhanced_prompt, 
-                child_photo_path=child_photo_path, 
-                style=final_style,
-                child_photo_paths=child_photos
-            )
+            # Генерируем с таймаутом (максимум 5 минут на изображение)
+            import asyncio
+            try:
+                # Для обложки передаем название книги отдельно
+                book_title_for_cover = None
+                if scene.order == 0:
+                    book_title_for_cover = book_check.title
+                
+                # Определяем child_id для использования face profile
+                child_id_for_face = None
+                if child and child.id:
+                    child_id_for_face = child.id
+                
+                final_url = await asyncio.wait_for(
+                    generate_final_image(
+                        enhanced_prompt, 
+                        face_url=face_url,
+                        child_photo_path=child_photo_path, 
+                        child_photo_paths=child_photo_paths_list if child_photo_paths_list else None,
+                        style=final_style,
+                        book_title=book_title_for_cover,  # Передаем название для обложки
+                        child_id=child_id_for_face,  # Передаем child_id для face profile
+                        use_child_face=True  # Использовать face profile если доступен
+                    ),
+                    timeout=1800.0  # 30 минут
+                )
+                logger.info(f"✓ Финальное изображение сгенерировано для сцены order={scene.order}: {final_url}")
+            except asyncio.TimeoutError:
+                error_message = f"Таймаут при генерации финального изображения для сцены order={scene.order} (превышено 5 минут)"
+                logger.error(f"❌ {error_message}")
+                # Пропускаем это изображение и продолжаем
+                if task_id:
+                    from ..services.tasks import update_task_progress
+                    update_task_progress(task_id, {
+                        "images_generated": idx - 1,
+                        "message": f"⚠ Пропущено изображение {idx}/{len(scenes_with_prompts)} из-за таймаута"
+                    })
+                continue  # Пропускаем это изображение
             logger.info(f"✓ Финальное изображение сгенерировано для сцены order={scene.order}: {final_url}")
         except HTTPException as e:
             # HTTPException имеет атрибут detail, извлекаем его
@@ -271,7 +350,12 @@ async def regenerate_scene_endpoint(
         final_style = theme_style.final_style
         
         # Формируем промпт с финальным стилем
-        enhanced_prompt = f"Visual style: {final_style}. {scene.image_prompt}"
+        # Для новых премиум стилей (marvel, dc, anime) используем специальные промпты
+        if final_style in ['marvel', 'dc', 'anime']:
+            from ..services.style_prompts import get_style_prompt
+            enhanced_prompt = get_style_prompt(final_style, scene.image_prompt or "", is_cover=False)
+        else:
+            enhanced_prompt = f"Visual style: {final_style}. {scene.image_prompt}"
         
         # Генерируем финальное изображение через image_pipeline с face swap
         # Получаем путь к фото ребёнка из child через book
@@ -281,10 +365,15 @@ async def regenerate_scene_endpoint(
             # Извлекаем путь из URL (формат: http://host:port/static/children/{child_id}/filename.jpg)
             if "/static/" in child.face_url:
                 relative_path = child.face_url.split("/static/", 1)[1]
-                from ..services.local_file_service import BASE_UPLOAD_DIR
+                from ..services.storage import BASE_UPLOAD_DIR
                 child_photo_path = os.path.join(BASE_UPLOAD_DIR, relative_path)
         
-        final_url = await generate_final_image(enhanced_prompt, child_photo_path=child_photo_path, style=final_style)
+        final_url = await generate_final_image(
+            enhanced_prompt, 
+            face_url=data.face_url,
+            child_photo_path=child_photo_path, 
+            style=final_style
+        )
         
         # Обновляем запись в БД
         image_record = db.query(Image).filter(

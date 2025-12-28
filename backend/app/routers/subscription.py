@@ -6,11 +6,9 @@ import os
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
+from typing import Optional
 
 import httpx
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
@@ -20,6 +18,7 @@ from ..db import get_db
 from ..models import Subscription
 from ..models.user import User
 from ..core.deps import get_current_user
+from ..services.email_service import send_email, convert_text_to_html
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +30,16 @@ SUBSCRIPTION_DURATION_DAYS = int(os.getenv("SUBSCRIPTION_DURATION_DAYS", "30"))
 
 DEVELOPER_EMAIL = os.getenv("DEVELOPER_EMAIL", "maksim.yugov.89@gmail.com")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID")
+# Для Telegram можно использовать chat_id (число) или username (без @)
+# Примеры: "123456789" (chat_id) или "Satir45" (username)
+# По умолчанию: @Satir45
+_telegram_chat_id = os.getenv("TELEGRAM_ADMIN_CHAT_ID")
+TELEGRAM_CHAT_ID = _telegram_chat_id if _telegram_chat_id else "Satir45"
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+# Конфигурация тем в Telegram группе (message_thread_id)
+TELEGRAM_TOPICS = {
+    "payments": 45,  # Успешные оплаты (PDF, премиум, заказы на печать)
+}
 
 
 class SubscriptionStatusResponse(BaseModel):
@@ -56,37 +59,61 @@ class SubscriptionCreateResponse(BaseModel):
 
 
 async def _send_email(to: str, subject: str, body: str) -> None:
-    if not SMTP_USER or not SMTP_PASSWORD:
-        logger.warning("[Subscription][Email] SMTP credentials not configured, skipping email")
-        return
+    """Отправка email через Resend API"""
     try:
-        msg = MIMEMultipart()
-        msg["From"] = SMTP_USER
-        msg["To"] = to
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain", "utf-8"))
-
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.send_message(msg)
+        # Конвертируем текст в HTML
+        html_content = convert_text_to_html(body)
+        
+        # Отправка через Resend API
+        await send_email(
+            to=to,
+            subject=subject,
+            html=html_content,
+            text=body  # Текстовая версия для fallback
+        )
         logger.info(f"[Subscription][Email] ✓ Отправлено на {to}")
     except Exception as e:
         logger.error(f"[Subscription][Email] ✗ Ошибка отправки: {e}")
 
 
-async def _send_telegram(text: str) -> None:
+async def _send_telegram(text: str, message_thread_id: Optional[int] = None) -> None:
+    """Отправка сообщения в Telegram с поддержкой тем (threads)"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         logger.warning("[Subscription][Telegram] Bot token or chat ID not configured, skipping telegram")
         return
     try:
+        # Поддержка username (без @) и chat_id (число)
+        chat_id = TELEGRAM_CHAT_ID
+        # Если это не число, значит это username - убираем @ если есть
+        if not chat_id.lstrip('-').isdigit():
+            # Убираем @ если есть, Telegram API принимает username без @
+            chat_id = chat_id.lstrip('@')
+        
+        # Параметры запроса
+        params = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown"
+        }
+        
+        # Добавляем message_thread_id, если указан (для отправки в конкретную тему)
+        if message_thread_id is not None:
+            params["message_thread_id"] = message_thread_id
+            logger.info(f"[Subscription][Telegram] Отправка в тему Telegram (thread_id: {message_thread_id})")
+        
         async with httpx.AsyncClient() as client:
-            await client.post(
+            response = await client.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"},
+                json=params,
                 timeout=10.0,
             )
-        logger.info("[Subscription][Telegram] ✓ Отправлено")
+            if response.status_code == 200:
+                thread_info = f" (тема: {message_thread_id})" if message_thread_id else ""
+                logger.info(f"[Subscription][Telegram] ✓ Отправлено в {chat_id}{thread_info}")
+            else:
+                logger.error(f"[Subscription][Telegram] ✗ Ошибка: {response.status_code} - {response.text}")
+                if response.status_code == 400 and "chat not found" in response.text.lower():
+                    logger.warning("[Subscription][Telegram] ⚠️ Возможно, нужно использовать chat_id вместо username. Получите chat_id через @userinfobot")
     except Exception as e:
         logger.error(f"[Subscription][Telegram] ✗ Ошибка отправки: {e}")
 
@@ -114,7 +141,9 @@ async def send_subscription_notification(user_email: str, expires_at: datetime) 
         f"💰 {SUBSCRIPTION_PRICE} ₽\n"
         f"📅 До: {expires_at.strftime('%d.%m.%Y')}"
     )
-    await _send_telegram(telegram_msg)
+    # Отправляем в тему "Успешные оплаты" (thread_id: 45)
+    thread_id = TELEGRAM_TOPICS.get("payments")
+    await _send_telegram(telegram_msg, message_thread_id=thread_id)
 
 
 @router.get("/status", response_model=SubscriptionStatusResponse)
