@@ -6,6 +6,7 @@ import '../../../app/routes/route_names.dart';
 import '../../../ui/components/glowing_capsule_button.dart';
 import '../../../ui/components/asset_icon.dart';
 import '../../../core/widgets/magic/glassmorphic_card.dart';
+import '../../../core/utils/text_style_helpers.dart';
 
 class WelcomeScreen extends HookConsumerWidget {
   const WelcomeScreen({super.key});
@@ -124,12 +125,12 @@ class WelcomeScreen extends HookConsumerWidget {
                             color: Colors.white.withOpacity(0.9),
                           ).copyWith(
                             shadows: [
-                                  Shadow(
-                                    color: Colors.black.withOpacity(0.5),
-                                    blurRadius: 8,
-                                  ),
-                                ],
+                              Shadow(
+                                color: Colors.black.withOpacity(0.5),
+                                blurRadius: 8,
                               ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 60),

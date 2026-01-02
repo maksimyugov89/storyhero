@@ -355,14 +355,14 @@ class BackendApi {
       
       // Подготавливаем данные для отправки
       final requestData = {
-        'name': name,
-        'age': age,
+          'name': name,
+          'age': age,
         'gender': gender.toApiValue(), // 'male' или 'female'
-        'interests': interests,
-        'fears': fears,
-        'character': character,
-        'moral': moral,
-        if (faceUrl != null) 'face_url': faceUrl,
+          'interests': interests,
+          'fears': fears,
+          'character': character,
+          'moral': moral,
+          if (faceUrl != null) 'face_url': faceUrl,
       };
       
       print('[BackendApi] createChild: Отправляемые данные: $requestData');
@@ -583,8 +583,8 @@ class BackendApi {
           try {
             print('[BackendApi] updateChild: 📤 Загрузка фото ${i + 1}/${photos.length}: ${photo.path}');
             
-            // ВАЖНО: uploadChildPhoto отправляет POST /children/{id}/photos
-            // child_id передается ТОЛЬКО в URL, НЕ в FormData
+          // ВАЖНО: uploadChildPhoto отправляет POST /children/{id}/photos
+          // child_id передается ТОЛЬКО в URL, НЕ в FormData
             final faceUrlFromUpload = await uploadChildPhoto(photo, id);
             lastUploadedFaceUrl = faceUrlFromUpload;
             uploadedCount++;
@@ -598,7 +598,7 @@ class BackendApi {
         }
         
         print('[BackendApi] updateChild: 📊 ИТОГО: Загружено $uploadedCount из ${photos.length} фотографий (ошибок: $failedCount)');
-        
+          
         // Обновляем faceUrl в модели через copyWith (используем последнее успешно загруженное фото)
         if (lastUploadedFaceUrl != null) {
           final childWithPhoto = updatedChild.copyWith(faceUrl: lastUploadedFaceUrl);

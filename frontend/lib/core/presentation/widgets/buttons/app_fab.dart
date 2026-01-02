@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../design_system/app_colors.dart';
-import '../../design_system/app_radius.dart';
 import '../../design_system/app_shadows.dart';
 import '../../../../ui/components/asset_icon.dart';
 
@@ -70,6 +69,7 @@ class _AppFABState extends State<AppFAB>
                 opacity: 0.5,
                 blur: 20,
                 spread: 2,
+                glowColor: glowColor,
               ),
             ),
             child: FloatingActionButton(

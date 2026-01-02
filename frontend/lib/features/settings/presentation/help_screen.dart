@@ -144,11 +144,11 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
         type: _selectedType,
         message: message,
       );
-      
+
       // Обновляем список сообщений
       ref.invalidate(supportMessagesProvider);
-      
-      if (mounted) {
+        
+        if (mounted) {
         // Показываем успешное сообщение
         showDialog(
           context: context,
@@ -239,7 +239,7 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
       case 'suggestion':
       default:
         return 'Пожелание';
-    }
+  }
   }
 
   String _getStatusLabel(String status) {
@@ -501,15 +501,15 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
                   fullWidth: true,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
+                  children: [
                       Icon(Icons.send, color: Colors.white, size: 24),
                       const SizedBox(width: AppSpacing.sm),
                       Text(
                         _isLoading ? 'Отправка...' : '📧 Отправить на Email и Telegram',
                         style: safeCopyWith(
                           AppTypography.labelLarge,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
                         ),
                       ),
                     ],

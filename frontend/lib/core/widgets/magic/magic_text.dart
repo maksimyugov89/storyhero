@@ -21,7 +21,6 @@ class MagicText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final defaultGradient = LinearGradient(
       colors: [
         Theme.of(context).colorScheme.primary,

@@ -90,7 +90,6 @@ class _GlowingCapsuleButtonState extends State<GlowingCapsuleButton>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final defaultGradient = widget.gradient ?? AppThemeMagic.primaryGradient;
     final primaryColor = Theme.of(context).colorScheme.primary;
     final secondaryColor = Theme.of(context).colorScheme.secondary;
@@ -108,15 +107,6 @@ class _GlowingCapsuleButtonState extends State<GlowingCapsuleButton>
             final scaleValue = _scaleAnimation.value;
             final glowValue = _glowAnimation.value * (_isHovered ? 1.2 : 1.0);
 
-            // Градиент для свечения
-            final glowGradient = LinearGradient(
-              colors: [
-                primaryColor.withOpacity(0.3 * glowValue),
-                secondaryColor.withOpacity(0.3 * glowValue),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            );
 
             return Transform.scale(
               scale: scaleValue,

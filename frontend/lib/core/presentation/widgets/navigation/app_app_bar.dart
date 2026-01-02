@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../design_system/app_colors.dart';
 import '../../design_system/app_typography.dart';
-import '../buttons/app_icon_button.dart';
 
 /// Кастомный AppBar с магическим стилем
 class AppAppBar extends StatelessWidget implements PreferredSizeWidget {

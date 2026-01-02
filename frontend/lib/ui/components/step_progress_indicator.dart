@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../core/models/book_generation_step.dart';
-import 'asset_icon.dart';
 import '../../core/utils/text_style_helpers.dart';
 
 /// Индикатор прогресса этапов генерации книги

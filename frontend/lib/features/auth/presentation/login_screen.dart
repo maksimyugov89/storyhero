@@ -13,9 +13,7 @@ import '../../../core/presentation/widgets/buttons/app_button.dart';
 import '../../../core/presentation/widgets/buttons/app_magic_button.dart';
 import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../ui/components/asset_icon.dart';
-import '../../../core/presentation/widgets/buttons/app_icon_button.dart';
 import '../data/auth_repository.dart';
-import '../../../core/auth/auth_status_provider.dart';
 
 class LoginScreen extends HookConsumerWidget {
   const LoginScreen({super.key});

@@ -25,12 +25,18 @@ String? _imageUrlFromJson(dynamic value) {
 @freezed
 class Scene with _$Scene {
   const factory Scene({
+    // ignore: invalid_annotation_target
     @JsonKey(fromJson: _sceneIdToString) required String id,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'book_id') required String bookId,
     required int order,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'short_summary', fromJson: _shortSummaryFromJson) required String shortSummary,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'image_prompt') String? imagePrompt, // Сделано опциональным, т.к. API может не возвращать
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'draft_url') String? draftUrl,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'image_url', fromJson: _imageUrlFromJson) String? finalUrl, // Маппинг из image_url API в finalUrl
   }) = _Scene;
 

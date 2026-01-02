@@ -1,7 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../../design_system/app_colors.dart';
-import '../../design_system/app_radius.dart';
 import '../../design_system/app_spacing.dart';
 
 /// Стеклянная карточка (glassmorphism)

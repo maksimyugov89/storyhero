@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../design_system/app_colors.dart';
-import '../design_system/app_spacing.dart';
 
 /// Базовый Page компонент с автоматическим фоном и overlay
 class AppPage extends StatelessWidget {

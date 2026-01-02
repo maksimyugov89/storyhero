@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../design_system/app_colors.dart';
-import '../../design_system/app_radius.dart';
 import '../../design_system/app_spacing.dart';
 import '../../design_system/app_shadows.dart';
-import 'dart:ui' as ui;
 
 /// Магическая кнопка с glow эффектом
 class AppMagicButton extends StatefulWidget {
@@ -80,6 +78,7 @@ class _AppMagicButtonState extends State<AppMagicButton>
               opacity: _glowAnimation.value * 0.5,
               blur: 20 * _glowAnimation.value,
               spread: 2 * _glowAnimation.value,
+              glowColor: glowColor,
             ),
           ),
           child: Material(

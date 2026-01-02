@@ -98,7 +98,7 @@ class ChildBooksScreen extends ConsumerWidget {
                   return SafeArea(
                     child: RefreshIndicator(
                       onRefresh: () async {
-                        ref.refresh(childBooksProvider(childId));
+                        final _ = ref.refresh(childBooksProvider(childId));
                         await Future.delayed(const Duration(milliseconds: 500));
                       },
                       child: Padding(

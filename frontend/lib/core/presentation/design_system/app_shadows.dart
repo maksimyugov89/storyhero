@@ -31,9 +31,9 @@ class AppShadows {
   ];
   
   // Glow эффекты
-  static List<BoxShadow> glowPrimary({double opacity = 0.5, double blur = 20, double spread = 2}) => [
+  static List<BoxShadow> glowPrimary({double opacity = 0.5, double blur = 20, double spread = 2, Color? glowColor}) => [
     BoxShadow(
-      color: AppColors.primary.withOpacity(opacity),
+      color: (glowColor ?? AppColors.primary).withOpacity(opacity),
       blurRadius: blur,
       spreadRadius: spread,
     ),

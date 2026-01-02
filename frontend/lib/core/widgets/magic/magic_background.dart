@@ -20,6 +20,7 @@ class _MagicBackgroundState extends State<MagicBackground>
     with TickerProviderStateMixin {
   Offset _offset = Offset.zero;
   late AnimationController _resetController;
+  // ignore: unused_field
   late Animation<Offset> _resetAnimation;
 
   // Анимационные контроллеры для плавающих частиц

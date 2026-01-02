@@ -10,7 +10,9 @@ class TextVariant with _$TextVariant {
     required String id,
     required String text,
     required int variantNumber,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'created_at') String? createdAt,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'instruction') String? instruction, // Инструкция, которая привела к этому варианту
     @Default(false) bool isSelected,
   }) = _TextVariant;
@@ -23,9 +25,12 @@ class TextVariant with _$TextVariant {
 class ImageVariant with _$ImageVariant {
   const factory ImageVariant({
     required String id,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'image_url') required String imageUrl,
     required int variantNumber,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'created_at') String? createdAt,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'instruction') String? instruction, // Инструкция для изменения
     @Default(false) bool isSelected,
   }) = _ImageVariant;

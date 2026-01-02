@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../design_system/app_colors.dart';
-import '../../design_system/app_radius.dart';
 import '../../../../ui/components/asset_icon.dart';
 
 /// Кнопка-круг с иконкой

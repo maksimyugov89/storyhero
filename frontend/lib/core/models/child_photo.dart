@@ -8,6 +8,7 @@ class ChildPhoto with _$ChildPhoto {
   const factory ChildPhoto({
     required String url,
     required String filename,
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'is_avatar') @Default(false) bool isAvatar,
   }) = _ChildPhoto;
 
@@ -17,6 +18,7 @@ class ChildPhoto with _$ChildPhoto {
 @freezed
 class ChildPhotosResponse with _$ChildPhotosResponse {
   const factory ChildPhotosResponse({
+    // ignore: invalid_annotation_target
     @JsonKey(name: 'child_id') required String childId,
     @Default([]) List<ChildPhoto> photos,
   }) = _ChildPhotosResponse;

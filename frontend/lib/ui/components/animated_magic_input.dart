@@ -144,7 +144,6 @@ class _AnimatedMagicInputState extends State<AnimatedMagicInput>
         AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
-            final labelScale = _labelAnimation.value;
             final glowValue = _glowAnimation.value;
             final borderColor = _borderColorAnimation.value ?? Colors.transparent;
 

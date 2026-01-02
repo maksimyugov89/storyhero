@@ -6,7 +6,6 @@ import 'package:lottie/lottie.dart';
 import '../../../core/presentation/layouts/app_page.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
-import '../../../core/presentation/design_system/app_spacing.dart';
 import '../../../core/utils/text_style_helpers.dart';
 import '../../../features/auth/data/auth_repository.dart';
 import '../../../core/auth/auth_status.dart';

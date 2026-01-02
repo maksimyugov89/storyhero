@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
-import '../../../app/routes/app_router.dart';
 import '../../../app/routes/route_names.dart';
 import '../../../core/auth/auth_status_provider.dart';
 import '../../../core/auth/auth_status.dart';

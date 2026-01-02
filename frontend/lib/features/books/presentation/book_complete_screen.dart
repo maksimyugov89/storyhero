@@ -179,22 +179,22 @@ class BookCompleteScreen extends HookConsumerWidget {
                             print('[BookCompleteScreen] После подтверждения оплаты:');
                             print('[BookCompleteScreen] updatedBook.isPaid: ${updatedBook.isPaid}');
                             print('[BookCompleteScreen] updatedBook.finalPdfUrl: ${updatedBook.finalPdfUrl}');
-                            
-                            if (context.mounted) {
+
+                          if (context.mounted) {
                               if (updatedBook.isPaid && updatedBook.finalPdfUrl != null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                            ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Row(
-                                      children: [
+                                content: Row(
+                                  children: [
                                         Icon(Icons.check_circle, color: Colors.white),
                                         SizedBox(width: 8),
                                         Expanded(child: Text('Оплата успешно подтверждена! PDF доступен для скачивания.')),
-                                      ],
-                                    ),
-                                    backgroundColor: Colors.green,
+                                  ],
+                                ),
+                                backgroundColor: Colors.green,
                                     duration: Duration(seconds: 3),
-                                  ),
-                                );
+                              ),
+                            );
                               } else if (updatedBook.isPaid && updatedBook.finalPdfUrl == null) {
                                 // Оплата подтверждена, но PDF еще не готов
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -445,7 +445,7 @@ class BookCompleteScreen extends HookConsumerWidget {
               child: _CompleteBookCoverImage(
                 coverUrl: coverUrl,
                 bookId: bookId,
-              ),
+                    ),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -695,7 +695,7 @@ class BookCompleteScreen extends HookConsumerWidget {
                           ? 'Высокое качество, готов к печати'
                           : isPaid
                               ? 'PDF готовится, попробуйте позже'
-                              : 'Доступно после оплаты',
+                          : 'Доступно после оплаты',
                       style: safeCopyWith(
                         AppTypography.bodySmall,
                         color: AppColors.onSurfaceVariant,
@@ -711,7 +711,7 @@ class BookCompleteScreen extends HookConsumerWidget {
 
           // Кнопка скачивания PDF
           AppMagicButton(
-            onPressed: canDownload && !isDownloading ? onDownloadPressed : null,
+              onPressed: canDownload && !isDownloading ? onDownloadPressed : null,
             isLoading: isDownloading,
             fullWidth: true,
             child: Row(
@@ -719,15 +719,15 @@ class BookCompleteScreen extends HookConsumerWidget {
               children: [
                 Icon(
                   canDownload ? Icons.download : Icons.lock,
-                  color: Colors.white,
+                        color: Colors.white,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    isDownloading
-                        ? 'Скачивание...'
-                        : canDownload
+                isDownloading
+                    ? 'Скачивание...'
+                    : canDownload
                             ? 'Скачать PDF'
                             : isPaid
                                 ? 'PDF готовится'
@@ -735,12 +735,12 @@ class BookCompleteScreen extends HookConsumerWidget {
                     style: safeCopyWith(
                       AppTypography.labelLarge,
                       color: Colors.white,
-                      fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.bold,
                     ),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
-                  ),
                 ),
+              ),
               ],
             ),
           ),
@@ -848,9 +848,9 @@ class BookCompleteScreen extends HookConsumerWidget {
 
           // Кнопка заказа печатной книги
           AppMagicButton(
-            onPressed: () {
-              context.push(RouteNames.bookOrder.replaceAll(':id', bookId));
-            },
+              onPressed: () {
+                context.push(RouteNames.bookOrder.replaceAll(':id', bookId));
+              },
             fullWidth: true,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -858,13 +858,13 @@ class BookCompleteScreen extends HookConsumerWidget {
                 const Icon(Icons.shopping_cart, color: Colors.white),
                 const SizedBox(width: 8),
                 Text(
-                  '📦 Заказать печатную книгу',
+                '📦 Заказать печатную книгу',
                   style: safeCopyWith(
                     AppTypography.labelLarge,
-                    color: Colors.white,
+                  color: Colors.white,
                     fontWeight: FontWeight.bold,
-                  ),
                 ),
+              ),
               ],
             ),
           ),

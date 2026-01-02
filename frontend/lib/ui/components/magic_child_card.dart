@@ -37,7 +37,6 @@ class _MagicChildCardState extends State<MagicChildCard>
   late Animation<double> _glowAnimation;
   
   int _currentPhotoIndex = 0;
-  bool _isPressed = false;
 
   @override
   void initState() {
@@ -70,18 +69,15 @@ class _MagicChildCardState extends State<MagicChildCard>
   }
 
   void _onTapDown(TapDownDetails details) {
-    setState(() => _isPressed = true);
     _scaleController.forward();
   }
 
   void _onTapUp(TapUpDetails details) {
-    setState(() => _isPressed = false);
     _scaleController.reverse();
     widget.onTap?.call();
   }
 
   void _onTapCancel() {
-    setState(() => _isPressed = false);
     _scaleController.reverse();
   }
 
@@ -104,7 +100,6 @@ class _MagicChildCardState extends State<MagicChildCard>
         animation: Listenable.merge([_scaleAnimation, _glowAnimation]),
         builder: (context, child) {
           final scaleValue = _scaleAnimation.value;
-          final glowValue = _glowAnimation.value;
 
           return Transform.scale(
             scale: scaleValue,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../ui/components/asset_icon.dart';
+import '../../../core/utils/text_style_helpers.dart';
 
 class TimelineStep extends StatelessWidget {
   final String title;
@@ -117,8 +118,8 @@ class TimelineStep extends StatelessWidget {
                     fontSize: 12.0,
                     color: isActive || isCompleted
                         ? (isDark ? Colors.white70 : Colors.black54)
-                            : inactiveColor,
-                      ),
+                        : inactiveColor,
+                  ),
                 ),
               ],
             ],

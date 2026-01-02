@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../design_system/app_colors.dart';
 import 'app_page.dart';
 
 /// Расширение Scaffold с магическими стилями
