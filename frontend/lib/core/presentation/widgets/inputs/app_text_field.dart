@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../../design_system/app_colors.dart';
 import '../../design_system/app_typography.dart';
 import '../../../../ui/components/asset_icon.dart';
@@ -56,6 +57,9 @@ class _AppTextFieldState extends State<AppTextField> {
 
   @override
   Widget build(BuildContext context) {
+    final fillColor = kIsWeb
+        ? AppColors.surfaceVariant.withOpacity(0.9)
+        : AppColors.surface;
     return TextFormField(
       controller: widget.controller,
       obscureText: widget.obscureText && _obscureText,
@@ -105,7 +109,7 @@ class _AppTextFieldState extends State<AppTextField> {
               )
             : null,
         filled: true,
-        fillColor: AppColors.surface,
+        fillColor: fillColor,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,

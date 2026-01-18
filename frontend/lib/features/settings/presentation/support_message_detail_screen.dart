@@ -17,6 +17,7 @@ import '../../../core/api/backend_api.dart';
 import '../data/support_messages_provider.dart';
 import '../../../ui/components/asset_icon.dart';
 import 'package:intl/intl.dart';
+import '../../../ui/layouts/desktop_container.dart';
 
 class SupportMessageDetailScreen extends ConsumerStatefulWidget {
   final String messageId;
@@ -246,14 +247,19 @@ class _SupportMessageDetailScreenState extends ConsumerState<SupportMessageDetai
               });
             }
 
-            return Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: AppSpacing.paddingMD,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+            return DesktopContainer(
+              maxWidth: 900,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: AppSpacing.paddingMD,
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 820),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
                         // Информация о сообщении
                         AppMagicCard(
                           padding: AppSpacing.paddingLG,
@@ -459,11 +465,14 @@ class _SupportMessageDetailScreenState extends ConsumerState<SupportMessageDetai
                         ],
 
                         const SizedBox(height: AppSpacing.xl),
-                      ],
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             );
           },
           loading: () => const LoadingWidget(message: 'Загрузка сообщения...'),

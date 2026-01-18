@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/routes/route_names.dart';
 import '../../../core/presentation/layouts/app_page.dart';
+import '../../../core/presentation/layouts/desktop_layout.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
 import '../../../core/presentation/design_system/app_typography.dart';
 import '../../../core/presentation/design_system/app_spacing.dart';
@@ -131,144 +133,288 @@ class LoginScreen extends HookConsumerWidget {
             },
           ),
         ),
-        body: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.md,
-            AppSpacing.lg,
-            AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: FadeTransition(
-            opacity: fadeAnimation,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: AppSpacing.xxl),
-                
-                // Email поле
-                AppTextField(
-                  controller: emailController,
-                  label: 'Email',
-                  hint: 'example@email.com',
-                  prefixIcon: Icons.email_outlined,
-                  keyboardType: TextInputType.emailAddress,
-                  enabled: !isLoading.value,
-                ),
-                
-                const SizedBox(height: AppSpacing.md),
-                
-                // Пароль поле
-                AppTextField(
-                  controller: passwordController,
-                  label: 'Пароль',
-                  hint: 'Введите пароль',
-                  prefixIcon: Icons.lock_outline,
-                  obscureText: !showPassword.value,
-                  enabled: !isLoading.value,
-                  onSubmitted: isLoading.value ? null : handleLogin,
-                ),
-                
-                const SizedBox(height: AppSpacing.sm),
-                
-                // Забыли пароль
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      // TODO: Реализовать восстановление пароля
-                    },
-                    child: Text(
-                      'Забыли пароль?',
-                      style: safeCopyWith(
-                        AppTypography.bodyMedium,
-                        color: AppColors.onSurfaceVariant,
+        body: kIsWeb
+            ? DesktopLayout(
+                enableEnterAnimation: true,
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
+                  ),
+                  child: FadeTransition(
+                    opacity: fadeAnimation,
+                    child: DesktopFormContainer(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: AppSpacing.xxl),
+                          
+                          // Email поле
+                          AppTextField(
+                            controller: emailController,
+                            label: 'Email',
+                            hint: 'example@email.com',
+                            prefixIcon: Icons.email_outlined,
+                            keyboardType: TextInputType.emailAddress,
+                            enabled: !isLoading.value,
+                          ),
+                          
+                          const SizedBox(height: AppSpacing.md),
+                          
+                          // Пароль поле
+                          AppTextField(
+                            controller: passwordController,
+                            label: 'Пароль',
+                            hint: 'Введите пароль',
+                            prefixIcon: Icons.lock_outline,
+                            obscureText: !showPassword.value,
+                            enabled: !isLoading.value,
+                            onSubmitted: isLoading.value ? null : handleLogin,
+                          ),
+                          
+                          const SizedBox(height: AppSpacing.sm),
+                          
+                          // Забыли пароль
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () {
+                                // TODO: Реализовать восстановление пароля
+                              },
+                              child: Text(
+                                'Забыли пароль?',
+                                style: safeCopyWith(
+                                  AppTypography.bodyMedium,
+                                  color: AppColors.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ),
+                          
+                          // Ошибка
+                          if (errorMessage.value != null) ...[
+                            const SizedBox(height: AppSpacing.md),
+                            Container(
+                              padding: AppSpacing.paddingMD,
+                              decoration: BoxDecoration(
+                                color: AppColors.error.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.error),
+                              ),
+                              child: Row(
+                                children: [
+                                  AssetIcon(
+                                    assetPath: AppIcons.alert,
+                                    size: 20,
+                                    color: AppColors.error,
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  Expanded(
+                                    child: Text(
+                                      errorMessage.value!,
+                                      style: safeCopyWith(
+                                        AppTypography.bodyMedium,
+                                        color: AppColors.error,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          
+                          const SizedBox(height: AppSpacing.xl),
+                          
+                          // Кнопка входа
+                          AppMagicButton(
+                            onPressed: isLoading.value ? null : handleLogin,
+                            isLoading: isLoading.value,
+                            fullWidth: true,
+                            child: Text(
+                              'Войти',
+                              style: safeCopyWith(
+                                AppTypography.labelLarge,
+                                color: AppColors.onPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          
+                          const SizedBox(height: AppSpacing.lg),
+                          
+                          // Разделитель
+                          Row(
+                            children: [
+                              Expanded(child: Divider(color: AppColors.onSurfaceVariant.withOpacity(0.3))),
+                              Padding(
+                                padding: AppSpacing.paddingHMD,
+                                child: Text(
+                                  'или',
+                                  style: safeCopyWith(
+                                    AppTypography.bodySmall,
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              Expanded(child: Divider(color: AppColors.onSurfaceVariant.withOpacity(0.3))),
+                            ],
+                          ),
+                          
+                          const SizedBox(height: AppSpacing.lg),
+                          
+                          // Кнопка регистрации
+                          AppButton(
+                            text: 'Зарегистрироваться',
+                            outlined: true,
+                            fullWidth: true,
+                            onPressed: () => context.go(RouteNames.register),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-                
-                // Ошибка
-                if (errorMessage.value != null) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  Container(
-                    padding: AppSpacing.paddingMD,
-                    decoration: BoxDecoration(
-                      color: AppColors.error.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.error),
-                    ),
-                    child: Row(
-                      children: [
-                        AssetIcon(
-                          assetPath: AppIcons.alert,
-                          size: 20,
-                          color: AppColors.error,
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
+              )
+            : SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                  AppSpacing.lg,
+                  AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: FadeTransition(
+                  opacity: fadeAnimation,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: AppSpacing.xxl),
+                      
+                      // Email поле
+                      AppTextField(
+                        controller: emailController,
+                        label: 'Email',
+                        hint: 'example@email.com',
+                        prefixIcon: Icons.email_outlined,
+                        keyboardType: TextInputType.emailAddress,
+                        enabled: !isLoading.value,
+                      ),
+                      
+                      const SizedBox(height: AppSpacing.md),
+                      
+                      // Пароль поле
+                      AppTextField(
+                        controller: passwordController,
+                        label: 'Пароль',
+                        hint: 'Введите пароль',
+                        prefixIcon: Icons.lock_outline,
+                        obscureText: !showPassword.value,
+                        enabled: !isLoading.value,
+                        onSubmitted: isLoading.value ? null : handleLogin,
+                      ),
+                      
+                      const SizedBox(height: AppSpacing.sm),
+                      
+                      // Забыли пароль
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () {
+                            // TODO: Реализовать восстановление пароля
+                          },
                           child: Text(
-                            errorMessage.value!,
+                            'Забыли пароль?',
                             style: safeCopyWith(
                               AppTypography.bodyMedium,
-                              color: AppColors.error,
+                              color: AppColors.onSurfaceVariant,
                             ),
                           ),
                         ),
+                      ),
+                      
+                      // Ошибка
+                      if (errorMessage.value != null) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        Container(
+                          padding: AppSpacing.paddingMD,
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.error),
+                          ),
+                          child: Row(
+                            children: [
+                              AssetIcon(
+                                assetPath: AppIcons.alert,
+                                size: 20,
+                                color: AppColors.error,
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  errorMessage.value!,
+                                  style: safeCopyWith(
+                                    AppTypography.bodyMedium,
+                                    color: AppColors.error,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
-                    ),
-                  ),
-                ],
-                
-                const SizedBox(height: AppSpacing.xl),
-                
-                // Кнопка входа
-                AppMagicButton(
-                  onPressed: isLoading.value ? null : handleLogin,
-                  isLoading: isLoading.value,
-                  fullWidth: true,
-                  child: Text(
-                    'Войти',
-                    style: safeCopyWith(
-                      AppTypography.labelLarge,
-                      color: AppColors.onPrimary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: AppSpacing.lg),
-                
-                // Разделитель
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: AppColors.onSurfaceVariant.withOpacity(0.3))),
-                    Padding(
-                      padding: AppSpacing.paddingHMD,
-                      child: Text(
-                        'или',
-                        style: safeCopyWith(
-                          AppTypography.bodySmall,
-                          color: AppColors.onSurfaceVariant,
+                      
+                      const SizedBox(height: AppSpacing.xl),
+                      
+                      // Кнопка входа
+                      AppMagicButton(
+                        onPressed: isLoading.value ? null : handleLogin,
+                        isLoading: isLoading.value,
+                        fullWidth: true,
+                        child: Text(
+                          'Войти',
+                          style: safeCopyWith(
+                            AppTypography.labelLarge,
+                            color: AppColors.onPrimary,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                    Expanded(child: Divider(color: AppColors.onSurfaceVariant.withOpacity(0.3))),
-                  ],
+                      
+                      const SizedBox(height: AppSpacing.lg),
+                      
+                      // Разделитель
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: AppColors.onSurfaceVariant.withOpacity(0.3))),
+                          Padding(
+                            padding: AppSpacing.paddingHMD,
+                            child: Text(
+                              'или',
+                              style: safeCopyWith(
+                                AppTypography.bodySmall,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: AppColors.onSurfaceVariant.withOpacity(0.3))),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: AppSpacing.lg),
+                      
+                      // Кнопка регистрации
+                      AppButton(
+                        text: 'Зарегистрироваться',
+                        outlined: true,
+                        fullWidth: true,
+                        onPressed: () => context.go(RouteNames.register),
+                      ),
+                    ],
+                  ),
                 ),
-                
-                const SizedBox(height: AppSpacing.lg),
-                
-                // Кнопка регистрации
-                AppButton(
-                  text: 'Зарегистрироваться',
-                  outlined: true,
-                  fullWidth: true,
-                  onPressed: () => context.go(RouteNames.register),
-                ),
-              ],
-            ),
-          ),
-        ),
+              ),
       ),
     );
   }

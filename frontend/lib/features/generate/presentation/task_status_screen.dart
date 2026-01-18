@@ -22,6 +22,7 @@ import '../../../../core/presentation/widgets/buttons/app_button.dart';
 import '../../../../core/widgets/error_widget.dart';
 import '../../../../ui/components/asset_icon.dart';
 import 'create_book_screen.dart';
+import '../../../../ui/layouts/desktop_container.dart';
 
 final taskStatusProvider = FutureProvider.family<TaskStatus, String>(
   (ref, taskId) async {
@@ -293,12 +294,12 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
       final canNavigate = bookIdValue != null && isDraftImagesComplete;
       
       if (canNavigate) {
-        _stopPolling();
-        _navigated = true;
-        
+      _stopPolling();
+      _navigated = true;
+      
         final bookId = bookIdValue;
-        
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_isDisposed || !mounted || bookId == null) return;
           _unlockGeneration();
           Future.delayed(const Duration(milliseconds: 800), () {
@@ -307,14 +308,14 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
               context.go('${RouteNames.books}?filter=drafts');
               Future.delayed(const Duration(milliseconds: 300), () {
                 if (!_isDisposed && mounted) {
-                  context.go(RouteNames.bookView.replaceAll(':id', bookId));
+              context.go(RouteNames.bookView.replaceAll(':id', bookId));
                 }
               });
             }
           });
-        });
-        return;
-      }
+      });
+      return;
+    }
     }
   }
 
@@ -475,7 +476,7 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
             backgroundColor: AppColors.error,
           ),
         );
-      }
+    }
     }
   }
 
@@ -497,7 +498,7 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
     
     // Если этап уже пройден, возвращаем 1.0
     if (step == BookGenerationStep.finalImages || step == BookGenerationStep.done) {
-      return 1.0;
+        return 1.0;
     }
     
     // Если этап еще не начат, возвращаем 0.0
@@ -656,11 +657,13 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
             ),
           ),
           body: Center(
-            child: Padding(
-              padding: AppSpacing.paddingMD,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+            child: DesktopContainer(
+              maxWidth: 900,
+              child: Padding(
+                padding: AppSpacing.paddingMD,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                   AssetIcon(
                     assetPath: AppIcons.alert,
                     size: 64,
@@ -702,7 +705,8 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                     outlined: true,
                     onPressed: _handleExit,
                   ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -738,9 +742,11 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
             // Pure UI rendering - no side effects
             if (task.status == 'completed' && task.bookIdValue != null) {
               return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
+                child: DesktopContainer(
+                  maxWidth: 900,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
                     Container(
                       width: 120,
                       height: 120,
@@ -779,7 +785,8 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                         color: AppColors.onSurfaceVariant,
                       ),
                     ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             }
@@ -1035,30 +1042,35 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
             final estimatedTotalMinutes = 10;
             final remainingMinutes = (estimatedTotalMinutes - elapsedMinutes).clamp(0, estimatedTotalMinutes);
 
-            return SingleChildScrollView(
-              padding: AppSpacing.paddingMD,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+            return DesktopContainer(
+              maxWidth: 1000,
+              child: SingleChildScrollView(
+                padding: AppSpacing.paddingMD,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 900),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
                   const SizedBox(height: AppSpacing.md),
                   
                   // Магическая Lottie анимация (опущена ниже)
-                  SizedBox(
+                      SizedBox(
                     width: 180,
                     height: 180,
-                    child: Lottie.asset(
-                      'assets/animations/login_magic_swirl.json',
-                      fit: BoxFit.contain,
-                      repeat: true,
-                    ),
-                  ),
+                        child: Lottie.asset(
+                          'assets/animations/login_magic_swirl.json',
+                          fit: BoxFit.contain,
+                          repeat: true,
+                        ),
+                      ),
                   
                   const SizedBox(height: AppSpacing.sm),
                   
                   // Процент готовности с белым градиентом для лучшей читаемости
                   ShaderMask(
                     shaderCallback: (bounds) => LinearGradient(
-                      colors: [
+                            colors: [
                         Colors.white,
                         Colors.white.withOpacity(0.95),
                         AppColors.accent.withOpacity(0.5),
@@ -1067,14 +1079,14 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                       end: Alignment.bottomRight,
                     ).createShader(bounds),
                     child: Text(
-                      '${(progress * 100).toStringAsFixed(0)}%',
-                      style: safeCopyWith(
-                        AppTypography.headlineLarge,
+                                '${(progress * 100).toStringAsFixed(0)}%',
+                                style: safeCopyWith(
+                                  AppTypography.headlineLarge,
                         color: Colors.white,
-                        fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.bold,
                         fontSize: 52.0,
                         letterSpacing: 1.5,
-                      ),
+                              ),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -1094,15 +1106,15 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                     ).createShader(bounds),
                     child: Text(
                       'Генерация черновых изображений',
-                      style: safeCopyWith(
+                                style: safeCopyWith(
                         AppTypography.labelLarge,
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
                         fontSize: 17.0,
                         letterSpacing: 1.0,
-                      ),
+                              ),
                       textAlign: TextAlign.center,
-                    ),
+                          ),
                   ),
                   
                   const SizedBox(height: AppSpacing.lg),
@@ -1137,7 +1149,7 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                               fontSize: 22.0,
                               letterSpacing: 0.5,
                             ),
-                            textAlign: TextAlign.center,
+                    textAlign: TextAlign.center,
                           ),
                         ),
                       ),
@@ -1188,16 +1200,16 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ).createShader(bounds),
-                      child: Text(
-                        task.generationStatus.step.displayName,
-                        style: safeCopyWith(
-                          AppTypography.bodyLarge,
+                    child: Text(
+                      task.generationStatus.step.displayName,
+                      style: safeCopyWith(
+                        AppTypography.bodyLarge,
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 18.0,
                           letterSpacing: 0.5,
-                        ),
-                        textAlign: TextAlign.center,
+                      ),
+                      textAlign: TextAlign.center,
                       ),
                     ),
                   ),
@@ -1211,13 +1223,13 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text(
-                        _getDetailedProgressMessage(task)!,
-                        style: safeCopyWith(
-                          AppTypography.bodyMedium,
+                      _getDetailedProgressMessage(task)!,
+                      style: safeCopyWith(
+                        AppTypography.bodyMedium,
                           color: AppColors.onSurface,
                           fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
+                      ),
+                      textAlign: TextAlign.center,
                       ),
                     ),
                   ],
@@ -1250,8 +1262,8 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      AppProgressBar(
-                        progress: progress,
+                  AppProgressBar(
+                    progress: progress,
                         label: '',
                       ),
                     ],
@@ -1316,7 +1328,10 @@ class _TaskStatusScreenState extends ConsumerState<TaskStatusScreen> {
                       );
                     }),
                   ),
-                ],
+                      ],
+                    ),
+                  ),
+                ),
               ),
             );
           },

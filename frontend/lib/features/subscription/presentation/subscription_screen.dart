@@ -13,6 +13,7 @@ import '../../../core/presentation/widgets/navigation/app_app_bar.dart';
 import '../../../ui/components/asset_icon.dart';
 import '../../../core/models/book_style.dart';
 import '../data/subscription_provider.dart';
+import '../../../ui/layouts/desktop_container.dart';
 
 class SubscriptionScreen extends HookConsumerWidget {
   const SubscriptionScreen({super.key});
@@ -94,10 +95,15 @@ class SubscriptionScreen extends HookConsumerWidget {
             onPressed: () => context.pop(),
           ),
         ),
-        body: SingleChildScrollView(
-          padding: AppSpacing.paddingMD,
-          child: Column(
-            children: [
+        body: DesktopContainer(
+          maxWidth: 900,
+          child: SingleChildScrollView(
+            padding: AppSpacing.paddingMD,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 820),
+                child: Column(
+                  children: [
               const SizedBox(height: AppSpacing.lg),
 
               // Заголовок
@@ -184,8 +190,11 @@ class SubscriptionScreen extends HookConsumerWidget {
               // Превью стилей
               _buildStylesPreview(context, subscriptionState.isSubscribed),
 
-              const SizedBox(height: AppSpacing.xxl),
-            ],
+                  const SizedBox(height: AppSpacing.xxl),
+                ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -425,16 +434,14 @@ class SubscriptionScreen extends HookConsumerWidget {
                 if (!isSubscribed)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
-                    child: Icon(Icons.lock, size: 14, color: AppColors.onSurfaceVariant),
+                    child: Icon(Icons.lock, size: 14, color: AppColors.onBackground),
                   ),
                 Flexible(
                   child: Text(
                   style.name,
                   style: safeCopyWith(
                     AppTypography.labelSmall,
-                      color: isSubscribed 
-                          ? AppColors.primary 
-                          : Colors.white.withOpacity(0.9),
+                      color: AppColors.onBackground,
                       fontWeight: FontWeight.w500,
                     ),
                     maxLines: 1,
@@ -540,7 +547,7 @@ class SubscriptionScreen extends HookConsumerWidget {
                       if (!isSubscribed)
                         Padding(
                           padding: const EdgeInsets.only(right: 4),
-                          child: Icon(Icons.lock, size: 14, color: AppColors.onSurfaceVariant),
+                          child: Icon(Icons.lock, size: 14, color: AppColors.onBackground),
                         ),
                       Flexible(
                         child: Column(
@@ -551,9 +558,7 @@ class SubscriptionScreen extends HookConsumerWidget {
                               style.name,
                               style: safeCopyWith(
                                 AppTypography.labelMedium,
-                                color: isSubscribed 
-                                    ? AppColors.primary 
-                                    : AppColors.onBackground,
+                                color: AppColors.onBackground,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),

@@ -17,6 +17,7 @@ import '../data/support_messages_provider.dart';
 import '../../../core/models/support_message.dart';
 import '../../../app/routes/route_names.dart';
 import 'package:intl/intl.dart';
+import '../../../ui/layouts/desktop_container.dart';
 
 class HelpScreen extends ConsumerStatefulWidget {
   const HelpScreen({super.key});
@@ -275,13 +276,26 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
             onPressed: () => context.pop(),
           ),
         ),
-        body: SingleChildScrollView(
-          padding: AppSpacing.paddingMD,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+        body: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.0, end: 1.0),
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+          builder: (context, value, child) => Opacity(
+            opacity: value,
+            child: child,
+          ),
+          child: DesktopContainer(
+            maxWidth: 900,
+            child: SingleChildScrollView(
+              padding: AppSpacing.paddingMD,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                 const SizedBox(height: AppSpacing.md),
                 
                 // Заголовок
@@ -371,32 +385,34 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      TextFormField(
-                        controller: _nameController,
-                        decoration: InputDecoration(
-                          hintText: 'Как к вам обращаться?',
-                          prefixIcon: const Icon(Icons.person_outline),
-                          filled: true,
-                          fillColor: AppColors.surface.withOpacity(0.5),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                      _FocusGlow(
+                        child: TextFormField(
+                          controller: _nameController,
+                          decoration: InputDecoration(
+                            hintText: 'Как к вам обращаться?',
+                            prefixIcon: const Icon(Icons.person_outline),
+                            filled: true,
+                            fillColor: AppColors.surface.withOpacity(0.5),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.primary, width: 2),
+                            ),
                           ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppColors.primary, width: 2),
-                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Пожалуйста, введите ваше имя';
+                            }
+                            return null;
+                          },
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Пожалуйста, введите ваше имя';
-                          }
-                          return null;
-                        },
                       ),
                       
                       const SizedBox(height: AppSpacing.lg),
@@ -410,39 +426,41 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: InputDecoration(
-                          hintText: 'Для ответа на ваше обращение',
-                          prefixIcon: AssetIcon(
-                            assetPath: AppIcons.email,
-                            size: 20,
+                      _FocusGlow(
+                        child: TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: InputDecoration(
+                            hintText: 'Для ответа на ваше обращение',
+                            prefixIcon: AssetIcon(
+                              assetPath: AppIcons.email,
+                              size: 20,
+                            ),
+                            filled: true,
+                            fillColor: AppColors.surface.withOpacity(0.5),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.primary, width: 2),
+                            ),
                           ),
-                          filled: true,
-                          fillColor: AppColors.surface.withOpacity(0.5),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppColors.primary, width: 2),
-                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Пожалуйста, введите email';
+                            }
+                            if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                              return 'Введите корректный email';
+                            }
+                            return null;
+                          },
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Пожалуйста, введите email';
-                          }
-                          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                            return 'Введите корректный email';
-                          }
-                          return null;
-                        },
                       ),
                       
                       const SizedBox(height: AppSpacing.lg),
@@ -456,37 +474,39 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      TextFormField(
-                        controller: _messageController,
-                        maxLines: 5,
-                        maxLength: 1000,
-                        decoration: InputDecoration(
-                          hintText: _getMessageHint(),
-                          alignLabelWithHint: true,
-                          filled: true,
-                          fillColor: AppColors.surface.withOpacity(0.5),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                      _FocusGlow(
+                        child: TextFormField(
+                          controller: _messageController,
+                          maxLines: 5,
+                          maxLength: 1000,
+                          decoration: InputDecoration(
+                            hintText: _getMessageHint(),
+                            alignLabelWithHint: true,
+                            filled: true,
+                            fillColor: AppColors.surface.withOpacity(0.5),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.primary, width: 2),
+                            ),
                           ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: AppColors.primary, width: 2),
-                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Пожалуйста, введите сообщение';
+                            }
+                            if (value.trim().length < 10) {
+                              return 'Сообщение слишком короткое (минимум 10 символов)';
+                            }
+                            return null;
+                          },
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Пожалуйста, введите сообщение';
-                          }
-                          if (value.trim().length < 10) {
-                            return 'Сообщение слишком короткое (минимум 10 символов)';
-                          }
-                          return null;
-                        },
                       ),
                     ],
                   ),
@@ -495,24 +515,30 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
                 const SizedBox(height: AppSpacing.lg),
                 
                 // Кнопка отправки сообщения (на почту и в телеграм)
-                AppMagicButton(
-                  onPressed: _isLoading ? null : _sendMessage,
-                  isLoading: _isLoading,
-                  fullWidth: true,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                      Icon(Icons.send, color: Colors.white, size: 24),
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        _isLoading ? 'Отправка...' : '📧 Отправить на Email и Telegram',
-                        style: safeCopyWith(
-                          AppTypography.labelLarge,
+                Align(
+                  alignment: Alignment.center,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    child: AppMagicButton(
+                      onPressed: _isLoading ? null : _sendMessage,
+                      isLoading: _isLoading,
+                      fullWidth: true,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.send, color: Colors.white, size: 24),
+                          const SizedBox(width: AppSpacing.sm),
+                          Text(
+                            _isLoading ? 'Отправка...' : '📧 Отправить на Email и Telegram',
+                            style: safeCopyWith(
+                              AppTypography.labelLarge,
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
-                        ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
                 
@@ -547,7 +573,11 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
                 ),
                 
                 const SizedBox(height: AppSpacing.xl),
-              ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -823,3 +853,39 @@ class _HelpScreenState extends ConsumerState<HelpScreen> {
   }
 }
 
+class _FocusGlow extends StatefulWidget {
+  const _FocusGlow({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_FocusGlow> createState() => _FocusGlowState();
+}
+
+class _FocusGlowState extends State<_FocusGlow> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      onFocusChange: (value) => setState(() => _focused = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: _focused
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.22),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : [],
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}

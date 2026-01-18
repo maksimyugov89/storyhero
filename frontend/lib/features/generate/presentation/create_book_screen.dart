@@ -20,6 +20,7 @@ import '../../../../ui/components/asset_icon.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../subscription/data/subscription_provider.dart';
 import '../../../../app/routes/route_names.dart';
+import '../../../../ui/layouts/desktop_container.dart';
 
 final childrenProvider = FutureProvider<List<Child>>((ref) async {
   final api = ref.watch(backendApiProvider);
@@ -177,138 +178,159 @@ class CreateBookScreen extends HookConsumerWidget {
             },
           ),
         ),
-        body: Column(
-          children: [
-            // Прогресс-бар
-            Padding(
-              padding: AppSpacing.paddingMD,
-              child: Row(
-                children:                   List.generate(4, (index) {
-                    final step = index + 1;
-                    final isActive = step <= currentStep.value;
-                  
-                  return Expanded(
+        body: DesktopContainer(
+          maxWidth: 1100,
+          child: Column(
+            children: [
+              // Прогресс-бар
+              Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Padding(
+                    padding: AppSpacing.paddingMD,
                     child: Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? AppColors.primary
-                                  : AppColors.surfaceVariant,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                        if (step < 4) const SizedBox(width: 8),
-                      ],
-                    ),
-                  );
-                }),
-              ),
-            ),
-            
-            // Контент шага
-            Expanded(
-              child: SingleChildScrollView(
-                padding: AppSpacing.paddingMD,
-                child: _buildStepContent(
-                  context,
-                  ref,
-                  currentStep.value,
-                  childrenAsync,
-                  selectedChild,
-                  selectedStyle,
-                  errorMessage.value,
-                ),
-              ),
-            ),
-            
-            // Навигация
-            Padding(
-              padding: AppSpacing.paddingMD,
-              child: Row(
-                children: [
-                  if (currentStep.value > 1)
-                    Expanded(
-                      child: AppButton(
-                        text: 'Назад',
-                        outlined: true,
-                        onPressed: () {
-                          currentStep.value--;
-                          errorMessage.value = null;
-                        },
-                      ),
-                    ),
-                  if (currentStep.value > 1) const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: currentStep.value < 4
-                        ? AppMagicButton(
-                            onPressed: () {
-                              if (currentStep.value == 1 && selectedChild == null) {
-                                errorMessage.value = 'Выберите ребёнка';
-                                return;
-                              }
-                              if (currentStep.value == 2) {
-                                final topic = ref.read(bookTopicProvider);
-                                if (topic.trim().isEmpty) {
-                                  errorMessage.value = 'Опишите, о чём будет книга';
-                                  return;
-                                }
-                              }
-                              if (currentStep.value == 3 && selectedStyle == null) {
-                                errorMessage.value = 'Выберите стиль';
-                                return;
-                              }
-                              currentStep.value++;
-                              errorMessage.value = null;
-                            },
-                            fullWidth: true,
-                            child: Text(
-                              'Далее',
-                              style: safeCopyWith(
-                                AppTypography.labelLarge,
-                                color: AppColors.onPrimary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          )
-                        : AppMagicButton(
-                            onPressed: isLoading.value ? null : handleCreate,
-                            isLoading: isLoading.value,
-                            fullWidth: true,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                AssetIcon(
-                                  assetPath: AppIcons.magicPortal,
-                                  size: 20,
-                                  color: AppColors.onPrimary,
-                                ),
-                                const SizedBox(width: AppSpacing.xs),
-                                Flexible(
-                                  child: Text(
-                                  'Создать книгу',
-                                    style: safeCopyWith(
-                                      AppTypography.labelLarge,
-                                    color: AppColors.onPrimary,
-                                    fontWeight: FontWeight.bold,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
+                      children: List.generate(4, (index) {
+                        final step = index + 1;
+                        final isActive = step <= currentStep.value;
+                      
+                        return Expanded(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    color: isActive
+                                        ? AppColors.primary
+                                        : AppColors.surfaceVariant,
+                                    borderRadius: BorderRadius.circular(2),
                                   ),
                                 ),
-                              ],
+                              ),
+                              if (step < 4) const SizedBox(width: 8),
+                            ],
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+              ),
+              
+              // Контент шага
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: AppSpacing.paddingMD,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 900),
+                      child: _buildStepContent(
+                        context,
+                        ref,
+                        currentStep.value,
+                        childrenAsync,
+                        selectedChild,
+                        selectedStyle,
+                        errorMessage.value,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              
+              // Навигация
+              Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Padding(
+                    padding: AppSpacing.paddingMD,
+                    child: Row(
+                      children: [
+                        if (currentStep.value > 1)
+                          Expanded(
+                            child: AppButton(
+                              text: 'Назад',
+                              outlined: true,
+                              onPressed: () {
+                                currentStep.value--;
+                                errorMessage.value = null;
+                              },
                             ),
                           ),
+                        if (currentStep.value > 1) const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: currentStep.value < 4
+                              ? AppMagicButton(
+                                  onPressed: () {
+                                    if (currentStep.value == 1 && selectedChild == null) {
+                                      errorMessage.value = 'Выберите ребёнка';
+                                      return;
+                                    }
+                                    if (currentStep.value == 2) {
+                                      final topic = ref.read(bookTopicProvider);
+                                      if (topic.trim().isEmpty) {
+                                        errorMessage.value = 'Опишите, о чём будет книга';
+                                        return;
+                                      }
+                                    }
+                                    if (currentStep.value == 3 && selectedStyle == null) {
+                                      errorMessage.value = 'Выберите стиль';
+                                      return;
+                                    }
+                                    currentStep.value++;
+                                    errorMessage.value = null;
+                                  },
+                                  fullWidth: true,
+                                  child: Text(
+                                    'Далее',
+                                    style: safeCopyWith(
+                                      AppTypography.labelLarge,
+                                      color: AppColors.onPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                )
+                              : AppMagicButton(
+                                  onPressed: isLoading.value ? null : handleCreate,
+                                  isLoading: isLoading.value,
+                                  fullWidth: true,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      AssetIcon(
+                                        assetPath: AppIcons.magicPortal,
+                                        size: 20,
+                                        color: AppColors.onPrimary,
+                                      ),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      Flexible(
+                                        child: Text(
+                                        'Создать книгу',
+                                          style: safeCopyWith(
+                                            AppTypography.labelLarge,
+                                          color: AppColors.onPrimary,
+                                          fontWeight: FontWeight.bold,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -822,17 +844,28 @@ class CreateBookScreen extends HookConsumerWidget {
           const SizedBox(height: AppSpacing.md),
         ],
         
-        SizedBox(
-          height: 450,
-          child: GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: AppSpacing.md,
-              mainAxisSpacing: AppSpacing.md,
-              childAspectRatio: 0.85,
-            ),
-            itemCount: allBookStyles.length,
-            itemBuilder: (context, index) {
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final crossAxisCount = width >= 1100
+                ? 4
+                : width >= 820
+                    ? 3
+                    : 2;
+            final gap = width >= 900 ? AppSpacing.md : AppSpacing.sm;
+            final aspectRatio = width >= 900 ? 1.2 : 1.05;
+
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                crossAxisSpacing: gap,
+                mainAxisSpacing: gap,
+                childAspectRatio: aspectRatio,
+              ),
+              itemCount: allBookStyles.length,
+              itemBuilder: (context, index) {
               final style = allBookStyles[index];
               final isSelected = selectedStyle == style.id;
               final isLocked = style.isPremium && !isSubscribed;
@@ -847,7 +880,7 @@ class CreateBookScreen extends HookConsumerWidget {
                   }
                 },
                 selected: isSelected,
-                padding: AppSpacing.paddingMD,
+                padding: AppSpacing.paddingSM,
                 child: Stack(
                   children: [
                     Column(
@@ -855,28 +888,28 @@ class CreateBookScreen extends HookConsumerWidget {
                       children: [
                         AssetIcon(
                           assetPath: AppIcons.magicStyle,
-                          size: 40,
+                          size: 28,
                           color: isLocked
                               ? AppColors.onSurfaceVariant.withOpacity(0.5)
                               : isSelected
                                   ? AppColors.primary
                                   : AppColors.onSurfaceVariant,
                         ),
-                        const SizedBox(height: AppSpacing.sm),
+                        const SizedBox(height: AppSpacing.xs),
                         Text(
                           style.name,
                           style: safeCopyWith(
-                            AppTypography.labelLarge,
+                            AppTypography.labelMedium,
                             fontWeight: FontWeight.bold,
                             color: isLocked ? AppColors.onSurfaceVariant.withOpacity(0.5) : null,
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: AppSpacing.xs),
+                        const SizedBox(height: 2),
                         Text(
                           style.description,
                           style: safeCopyWith(
-                            AppTypography.bodySmall,
+                            AppTypography.labelSmall,
                             color: isLocked
                                 ? AppColors.onSurfaceVariant.withOpacity(0.5)
                                 : AppColors.onSurfaceVariant,
@@ -898,7 +931,7 @@ class CreateBookScreen extends HookConsumerWidget {
                             color: Colors.amber,
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Icon(Icons.lock, size: 16, color: Colors.white),
+                          child: Icon(Icons.lock, size: 14, color: Colors.white),
                         ),
                       ),
                     // Бейдж "Бесплатно"
@@ -926,8 +959,9 @@ class CreateBookScreen extends HookConsumerWidget {
                   ],
                 ),
               );
-            },
-          ),
+              },
+            );
+          },
         ),
       ],
     );

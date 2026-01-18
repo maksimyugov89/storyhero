@@ -18,6 +18,7 @@ import '../data/child_photos_provider.dart';
 import '../../../core/models/child_photo.dart';
 import '../../../core/utils/text_style_helpers.dart';
 import 'children_list_screen.dart';
+import '../../../ui/layouts/desktop_container.dart';
 
 final childProvider = FutureProvider.family<Child, String>((ref, childId) async {
   final api = ref.watch(backendApiProvider);
@@ -56,6 +57,18 @@ class ChildProfileScreen extends HookConsumerWidget {
     final childAsync = ref.watch(childProvider(childId));
     final fadeAnimation = useAnimationController(
       duration: const Duration(milliseconds: 600),
+    );
+    final slideAnimation = useMemoized(
+      () => Tween<Offset>(
+        begin: const Offset(0, 0.04),
+        end: Offset.zero,
+      ).animate(
+        CurvedAnimation(
+          parent: fadeAnimation,
+          curve: Curves.easeOutCubic,
+        ),
+      ),
+      [fadeAnimation],
     );
 
     useEffect(() {
@@ -107,60 +120,83 @@ class ChildProfileScreen extends HookConsumerWidget {
                 data: (child) {
                   return FadeTransition(
                     opacity: fadeAnimation,
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Большое фото ребёнка
-                          Center(
-                            child: Hero(
-                              tag: 'child-avatar-${child.id}',
-                              child: Container(
-                                width: 150,
-                                height: 150,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Theme.of(context).colorScheme.primary,
-                                      Theme.of(context).colorScheme.secondary,
-                                    ],
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
-                                      blurRadius: 20,
-                                      spreadRadius: 5,
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(75),
-                                  child: child.faceUrl != null && child.faceUrl!.isNotEmpty
-                                      ? FutureBuilder<Map<String, String>>(
-                                          future: _getAuthHeaders(),
-                                          builder: (context, snapshot) {
-                                            final headers = snapshot.data ?? {};
-                                            return CachedNetworkImage(
-                                              imageUrl: child.faceUrl!,
-                                              width: 150,
-                                              height: 150,
-                                              fit: BoxFit.cover,
-                                              httpHeaders: headers,
-                                              placeholder: (context, url) => Center(
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                                    Theme.of(context).colorScheme.primary,
-                                                  ),
-                                                ),
-                                              ),
-                                              errorWidget: (context, url, error) {
-                                                // Тихая обработка ошибки - показываем placeholder
-                                                return Center(
+                    child: SlideTransition(
+                      position: slideAnimation,
+                      child: DesktopContainer(
+                        maxWidth: 1100,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 900),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Большое фото ребёнка
+                                  Center(
+                                    child: Hero(
+                                      tag: 'child-avatar-${child.id}',
+                                      child: Container(
+                                        width: 150,
+                                        height: 150,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Theme.of(context).colorScheme.primary,
+                                              Theme.of(context).colorScheme.secondary,
+                                            ],
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                                              blurRadius: 20,
+                                              spreadRadius: 5,
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(75),
+                                          child: child.faceUrl != null && child.faceUrl!.isNotEmpty
+                                              ? FutureBuilder<Map<String, String>>(
+                                                  future: _getAuthHeaders(),
+                                                  builder: (context, snapshot) {
+                                                    final headers = snapshot.data ?? {};
+                                                    return CachedNetworkImage(
+                                                      imageUrl: child.faceUrl!,
+                                                      width: 150,
+                                                      height: 150,
+                                                      fit: BoxFit.cover,
+                                                      httpHeaders: headers,
+                                                      placeholder: (context, url) => Center(
+                                                        child: CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          valueColor: AlwaysStoppedAnimation<Color>(
+                                                            Theme.of(context).colorScheme.primary,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      errorWidget: (context, url, error) {
+                                                        // Тихая обработка ошибки - показываем placeholder
+                                                        return Center(
+                                                          child: Text(
+                                                            child.name.isNotEmpty 
+                                                                ? child.name[0].toUpperCase()
+                                                                : '?',
+                                                            style: safeTextStyle(
+                                                              color: Colors.white,
+                                                              fontSize: 60.0,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                          ),
+                                                        );
+                                                      },
+                                                    );
+                                                  },
+                                                )
+                                              : Center(
                                                   child: Text(
-                                                    child.name.isNotEmpty 
+                                                    child.name.isNotEmpty
                                                         ? child.name[0].toUpperCase()
                                                         : '?',
                                                     style: safeTextStyle(
@@ -169,200 +205,206 @@ class ChildProfileScreen extends HookConsumerWidget {
                                                       fontWeight: FontWeight.bold,
                                                     ),
                                                   ),
-                                                );
-                                              },
-                                            );
-                                          },
-                                        )
-                                      : Center(
-                                          child: Text(
-                                            child.name.isNotEmpty
-                                                ? child.name[0].toUpperCase()
-                                                : '?',
-                                            style: safeTextStyle(
-                                              color: Colors.white,
-                                              fontSize: 60.0,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
+                                                ),
                                         ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 32),
-                          // Информация
-                          GlassmorphicCard(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            child.name,
-                                            style: safeCopyWith(
-                                              Theme.of(context).textTheme.headlineMedium,
-                                              fontSize: 24.0,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.white,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            '${child.age} лет',
-                                            style: safeCopyWith(
-                                              Theme.of(context).textTheme.titleMedium,
-                                              fontSize: 18.0,
-                                                  color: Colors.white70,
-                                                ),
-                                          ),
-                                        ],
                                       ),
                                     ),
-                                  ],
-                                ),
-                                const SizedBox(height: 24),
-                                _InfoRow(
-                                  iconAsset: AppIcons.magicStar,
-                                  label: 'Интересы',
-                                  value: child.interests.isNotEmpty ? child.interests : 'Не указано',
-                                ),
-                                const SizedBox(height: 16),
-                                _InfoRow(
-                                  icon: Icons.psychology,
-                                  label: 'Характер',
-                                  value: child.character.isNotEmpty ? child.character : 'Не указано',
-                                ),
-                                const SizedBox(height: 16),
-                                _InfoRow(
-                                  iconAsset: AppIcons.alert,
-                                  label: 'Страхи',
-                                  value: child.fears.isNotEmpty ? child.fears : 'Не указано',
-                                ),
-                                const SizedBox(height: 16),
-                                _InfoRow(
-                                  iconAsset: AppIcons.myBooks,
-                                  label: 'Мораль истории',
-                                  value: child.moral.isNotEmpty ? child.moral : 'Не указано',
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                            GlassmorphicCard(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Фотографии',
-                                        style: safeCopyWith(
-                                          Theme.of(context).textTheme.titleLarge,
-                                          fontSize: 20.0,
-                                              color: Colors.white,
-                                            ),
-                                      ),
-                                    ],
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    '⭐ Нажмите на фото для выбора аватарки • ✕ для удаления',
-                                    style: safeCopyWith(
-                                      Theme.of(context).textTheme.bodySmall,
-                                      fontSize: 12.0,
-                                          color: Colors.white,
-                                      decoration: null,
-                                    ).copyWith(fontStyle: FontStyle.italic),
+                                  const SizedBox(height: 32),
+                                  // Информация
+                                  GlassmorphicCard(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    child.name,
+                                                    style: safeCopyWith(
+                                                      Theme.of(context).textTheme.headlineMedium,
+                                                      fontSize: 24.0,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    '${child.age} лет',
+                                                    style: safeCopyWith(
+                                                      Theme.of(context).textTheme.titleMedium,
+                                                      fontSize: 18.0,
+                                                      color: Colors.white70,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 24),
+                                        _InfoRow(
+                                          iconAsset: AppIcons.magicStar,
+                                          label: 'Интересы',
+                                          value: child.interests.isNotEmpty ? child.interests : 'Не указано',
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _InfoRow(
+                                          icon: Icons.psychology,
+                                          label: 'Характер',
+                                          value: child.character.isNotEmpty ? child.character : 'Не указано',
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _InfoRow(
+                                          iconAsset: AppIcons.alert,
+                                          label: 'Страхи',
+                                          value: child.fears.isNotEmpty ? child.fears : 'Не указано',
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _InfoRow(
+                                          iconAsset: AppIcons.myBooks,
+                                          label: 'Мораль истории',
+                                          value: child.moral.isNotEmpty ? child.moral : 'Не указано',
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  GlassmorphicCard(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              'Фотографии',
+                                              style: safeCopyWith(
+                                                Theme.of(context).textTheme.titleLarge,
+                                                fontSize: 20.0,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          '⭐ Нажмите на фото для выбора аватарки • ✕ для удаления',
+                                          style: safeCopyWith(
+                                            Theme.of(context).textTheme.bodySmall,
+                                            fontSize: 12.0,
+                                            color: Colors.white,
+                                            decoration: null,
+                                          ).copyWith(fontStyle: FontStyle.italic),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _PhotoGalleryWithAvatar(
+                                          child: child,
+                                          childId: childId,
+                                          fallbackFaceUrl: child.faceUrl,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  // Кнопки действий
+                                  Align(
+                                    alignment: Alignment.center,
+                                    child: SizedBox(
+                                      width: 320,
+                                      child: GlowingCapsuleButton(
+                                        text: '✏️ Редактировать профиль',
+                                        iconAsset: AppIcons.edit,
+                                        onPressed: () async {
+                                          try {
+                                            final updated = await context.push(
+                                              RouteNames.childEdit.replaceAll(':id', child.id),
+                                              extra: child,
+                                            );
+                                          } catch (e) {
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('Ошибка навигации: $e'),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                              context.go(RouteNames.home);
+                                            }
+                                          }
+                                        },
+                                        width: double.infinity,
+                                        height: 56,
+                                      ),
+                                    ),
                                   ),
                                   const SizedBox(height: 16),
-                                  _PhotoGalleryWithAvatar(
-                                    child: child,
-                                    childId: childId,
-                                    fallbackFaceUrl: child.faceUrl,
+                                  Align(
+                                    alignment: Alignment.center,
+                                    child: SizedBox(
+                                      width: 320,
+                                      child: GlowingCapsuleButton(
+                                        text: '📚 Книги ребёнка',
+                                        iconAsset: AppIcons.myBooks,
+                                        onPressed: () {
+                                          try {
+                                            context.push(RouteNames.childBooks.replaceAll(':id', child.id));
+                                          } catch (e) {
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('Ошибка навигации: $e'),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                              context.go(RouteNames.home);
+                                            }
+                                          }
+                                        },
+                                        width: double.infinity,
+                                        height: 56,
+                                      ),
+                                    ),
                                   ),
+                                  const SizedBox(height: 16),
+                                  Align(
+                                    alignment: Alignment.center,
+                                    child: SizedBox(
+                                      width: 320,
+                                      child: GlowingCapsuleButton(
+                                        text: '✨ Создать книгу',
+                                        iconAsset: AppIcons.generateStory,
+                                        onPressed: () {
+                                          try {
+                                            context.push(RouteNames.generate, extra: child);
+                                          } catch (e) {
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('Ошибка навигации: $e'),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                              context.go(RouteNames.home);
+                                            }
+                                          }
+                                        },
+                                        width: double.infinity,
+                                        height: 56,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 40),
                                 ],
                               ),
                             ),
-                          const SizedBox(height: 24),
-                          // Кнопки действий
-                          GlowingCapsuleButton(
-                            text: '✏️ Редактировать профиль',
-                            iconAsset: AppIcons.edit,
-                            onPressed: () async {
-                              try {
-                                final updated = await context.push(
-                                  RouteNames.childEdit.replaceAll(':id', child.id),
-                                  extra: child,
-                                );
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Ошибка навигации: $e'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                  context.go(RouteNames.home);
-                                }
-                              }
-                            },
-                            width: double.infinity,
-                            height: 56,
                           ),
-                          const SizedBox(height: 16),
-                          GlowingCapsuleButton(
-                            text: '📚 Книги ребёнка',
-                            iconAsset: AppIcons.myBooks,
-                            onPressed: () {
-                              try {
-                                context.push(RouteNames.childBooks.replaceAll(':id', child.id));
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Ошибка навигации: $e'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                  context.go(RouteNames.home);
-                                }
-                              }
-                            },
-                            width: double.infinity,
-                            height: 56,
-                          ),
-                          const SizedBox(height: 16),
-                          GlowingCapsuleButton(
-                            text: '✨ Создать книгу',
-                            iconAsset: AppIcons.generateStory,
-                            onPressed: () {
-                              try {
-                                context.push(RouteNames.generate, extra: child);
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Ошибка навигации: $e'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                  context.go(RouteNames.home);
-                                }
-                              }
-                            },
-                            width: double.infinity,
-                            height: 56,
-                          ),
-                          const SizedBox(height: 40),
-                        ],
+                        ),
                       ),
                     ),
                   );

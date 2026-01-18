@@ -20,6 +20,7 @@ import '../../../core/widgets/loading_widget.dart';
 import '../../../core/widgets/rounded_image.dart';
 import '../../../ui/components/asset_icon.dart';
 import '../data/book_providers.dart';
+import '../../../ui/layouts/desktop_container.dart';
 
 class BookCompleteScreen extends HookConsumerWidget {
   final String bookId;
@@ -101,10 +102,15 @@ class BookCompleteScreen extends HookConsumerWidget {
             print('[BookCompleteScreen] final isPaid: $isPaid');
             print('[BookCompleteScreen] pdfUrl: $pdfUrl');
 
-            return SingleChildScrollView(
-              padding: AppSpacing.paddingMD,
-              child: Column(
-                children: [
+            return DesktopContainer(
+              maxWidth: 1100,
+              child: SingleChildScrollView(
+                padding: AppSpacing.paddingMD,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 900),
+                    child: Column(
+                      children: [
                   const SizedBox(height: AppSpacing.lg),
 
                   // Успешное завершение
@@ -370,9 +376,12 @@ class BookCompleteScreen extends HookConsumerWidget {
                     ),
                   ),
 
-                  const SizedBox(height: AppSpacing.xxl),
-                ],
+                      const SizedBox(height: AppSpacing.xxl),
+                    ],
+                  ),
+                ),
               ),
+            ),
             );
           },
           loading: () => const LoadingWidget(),

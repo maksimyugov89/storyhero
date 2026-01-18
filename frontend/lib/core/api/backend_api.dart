@@ -1,6 +1,12 @@
+import 'dart:typed_data';
+import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:io' if (dart.library.html) 'dart:html' as io;
+import 'package:image_picker/image_picker.dart';
+import 'package:http_parser/http_parser.dart';
+// Условный импорт: на Web dart:io не доступен
+import 'dart:io' if (dart.library.html) 'stub_io.dart' as io;
 import 'package:path/path.dart' as path;
 import 'api_client.dart';
 import '../models/child.dart';
@@ -33,11 +39,205 @@ class BackendApi {
 
   BackendApi(this._dio);
 
+  // ============================================================
+  // КРОССПЛАТФОРМЕННЫЕ МЕТОДЫ ЗАГРУЗКИ (работают на Web и Mobile)
+  // ============================================================
+  
+  /// Загружает фотографию на сервер без привязки к ребенку (кроссплатформенный)
+  /// POST /upload
+  /// Возвращает url из ответа: { "url": "http://..." }
+  Future<String> uploadPhotoXFile(XFile photoFile) async {
+    try {
+      print('[BackendApi] uploadPhotoXFile: Загрузка файла ${photoFile.name}...');
+      
+      final bytes = await photoFile.readAsBytes();
+      if (bytes.isEmpty) {
+        throw Exception('Файл пустой: ${photoFile.name}');
+      }
+
+      print('[BackendApi] uploadPhotoXFile: Размер файла: ${bytes.length} байт');
+
+      // Определяем content type
+      final ext = photoFile.name.split('.').last.toLowerCase();
+      final mimeType = _getMimeType(ext);
+      
+      // Создаем MultipartFile из bytes (работает на всех платформах)
+      final multipartFile = MultipartFile.fromBytes(
+        bytes,
+        filename: photoFile.name,
+        contentType: MediaType.parse(mimeType),
+      );
+
+      final formData = FormData.fromMap({
+        "file": multipartFile,
+      });
+
+      final response = await _dio.post(
+        '/upload',
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+          receiveTimeout: const Duration(seconds: 30),
+          sendTimeout: const Duration(seconds: 30),
+        ),
+      );
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data;
+        
+        if (data is Map<String, dynamic>) {
+          final photoUrl = data['url'] as String?;
+          
+          if (photoUrl == null || photoUrl.isEmpty) {
+            throw Exception('Сервер не вернул url загруженной фотографии');
+          }
+          
+          print('[BackendApi] uploadPhotoXFile: Успешно, url: $photoUrl');
+          return photoUrl;
+        }
+        
+        throw Exception('Некорректный формат ответа сервера');
+      }
+      
+      throw Exception('Неожиданный статус ответа: ${response.statusCode}');
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final errorMessage = e.response?.data?['detail']?.toString() ?? 
+                          e.response?.data?['message']?.toString() ?? 
+                          e.message ?? 
+                          'Неизвестная ошибка';
+
+      print('[BackendApi] uploadPhotoXFile: DioException - $statusCode: $errorMessage');
+
+      if (statusCode == 401) {
+        throw Exception('Требуется авторизация. Пожалуйста, войдите в аккаунт заново.');
+      }
+
+      throw Exception('Ошибка загрузки фотографии: $errorMessage');
+    } catch (e) {
+      print('[BackendApi] uploadPhotoXFile: Ошибка: $e');
+      rethrow;
+    }
+  }
+
+  /// Загружает фотографию с привязкой к ребенку (кроссплатформенный)
+  /// POST /children/{child_id}/photos
+  Future<String> uploadChildPhotoXFile(XFile photoFile, String childId) async {
+    try {
+      print('[BackendApi] uploadChildPhotoXFile: child_id=$childId, file=${photoFile.name}');
+      
+      // Сжимаем если не Web
+      Uint8List bytes;
+      if (!kIsWeb) {
+        final compressed = await ImageCompressor.compressXFile(photoFile);
+        if (compressed != null) {
+          bytes = await compressed.readAsBytes();
+          print('[BackendApi] uploadChildPhotoXFile: Использован сжатый файл');
+        } else {
+          bytes = await photoFile.readAsBytes();
+        }
+      } else {
+        bytes = await photoFile.readAsBytes();
+      }
+      
+      if (bytes.isEmpty) {
+        throw Exception('Файл пустой');
+      }
+
+      final ext = photoFile.name.split('.').last.toLowerCase();
+      final mimeType = _getMimeType(ext);
+      
+      final multipartFile = MultipartFile.fromBytes(
+        bytes,
+        filename: photoFile.name,
+        contentType: MediaType.parse(mimeType),
+      );
+
+      final formData = FormData.fromMap({
+        "file": multipartFile,
+      });
+
+      final response = await _dio.post(
+        '/children/$childId/photos',
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+          receiveTimeout: const Duration(seconds: 60),
+          sendTimeout: const Duration(seconds: 60),
+        ),
+      );
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data;
+        
+        if (data is Map<String, dynamic>) {
+          final faceUrl = data['face_url'] as String? ?? 
+                         data['url'] as String?;
+          
+          if (faceUrl == null || faceUrl.isEmpty) {
+            throw Exception('Сервер не вернул url фотографии');
+          }
+          
+          print('[BackendApi] uploadChildPhotoXFile: Успешно, face_url: $faceUrl');
+          return faceUrl;
+        }
+        
+        throw Exception('Некорректный формат ответа');
+      }
+      
+      throw Exception('Неожиданный статус: ${response.statusCode}');
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final errorMessage = e.response?.data?['detail']?.toString() ?? 
+                          e.response?.data?['message']?.toString() ?? 
+                          e.message ?? 
+                          'Неизвестная ошибка';
+
+      print('[BackendApi] uploadChildPhotoXFile: DioException - $statusCode: $errorMessage');
+
+      if (statusCode == 401) {
+        throw Exception('Требуется авторизация');
+      }
+
+      throw Exception('Ошибка загрузки: $errorMessage');
+    } catch (e) {
+      print('[BackendApi] uploadChildPhotoXFile: Ошибка: $e');
+      rethrow;
+    }
+  }
+  
+  /// Получает MIME тип из расширения
+  String _getMimeType(String ext) {
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'image/jpeg';
+    }
+  }
+
+  // ============================================================
+  // УСТАРЕВШИЕ МЕТОДЫ (только для мобильных платформ)
+  // Используйте uploadPhotoXFile и uploadChildPhotoXFile
+  // ============================================================
+  
   // Children
   /// Загружает фотографию на сервер без привязки к ребенку
   /// POST /upload
-  /// Возвращает url из ответа: { "url": "http://..." }
+  /// @deprecated Используйте uploadPhotoXFile для кроссплатформенности
   Future<String> uploadPhoto(io.File photoFile) async {
+    // На Web этот метод не должен вызываться
+    if (kIsWeb) {
+      throw UnsupportedError('uploadPhoto не поддерживается на Web. Используйте uploadPhotoXFile');
+    }
+    
     try {
       print('[BackendApi] Uploading photo to server...');
       
@@ -131,7 +331,13 @@ class BackendApi {
   /// POST /children/{child_id}/photos
   /// НЕ отправляет child_id в FormData, только в URL
   /// Возвращает face_url из ответа: { "child_id": "...", "face_url": "http://..." }
+  /// @deprecated Используйте uploadChildPhotoXFile для кроссплатформенности
   Future<String> uploadChildPhoto(io.File photoFile, String childId) async {
+    // На Web этот метод не должен вызываться
+    if (kIsWeb) {
+      throw UnsupportedError('uploadChildPhoto не поддерживается на Web. Используйте uploadChildPhotoXFile');
+    }
+    
     try {
       print('[BackendApi] ===== uploadChildPhoto START =====');
       print('[BackendApi] child_id: $childId');
@@ -151,23 +357,9 @@ class BackendApi {
       // Используем basename для кроссплатформенной работы
       final filename = path.basename(photoFile.path);
       
-      // Сжимаем фото перед загрузкой
-      io.File fileToSend = photoFile;
-      try {
-        final compressed = await ImageCompressor.compress(photoFile);
-        if (compressed != null && compressed.existsSync()) {
-          fileToSend = compressed;
-          print('[BackendApi] uploadChildPhoto: Используем сжатый файл ${fileToSend.path}, размер: ${fileToSend.lengthSync()} байт');
-        } else {
-          print('[BackendApi] uploadChildPhoto: Сжатие не удалось, отправляем оригинал');
-        }
-      } catch (e) {
-        print('[BackendApi] uploadChildPhoto: Ошибка сжатия, отправляем оригинал: $e');
-      }
-
-      // Создаем MultipartFile
+      // Создаем MultipartFile (сжатие выполняется в кроссплатформенном методе uploadChildPhotoXFile)
       final multipartFile = await MultipartFile.fromFile(
-        fileToSend.path,
+        photoFile.path,
         filename: filename,
       );
 
@@ -347,7 +539,7 @@ class BackendApi {
     required String character,
     required String moral,
     String? faceUrl,
-    List<io.File>? photos,
+    List<XFile>? photos,
   }) async {
     try {
       print('[BackendApi] createChild: Создание ребенка');
@@ -440,7 +632,8 @@ class BackendApi {
         
         try {
           // Загружаем первую фотографию (остальные можно загрузить позже если нужно)
-          final faceUrlFromUpload = await uploadChildPhoto(photos.first, childId);
+          // Используем кроссплатформенный метод uploadChildPhotoXFile
+          final faceUrlFromUpload = await uploadChildPhotoXFile(photos.first, childId);
           
           // Обновляем faceUrl в модели
           createdChild = createdChild.copyWith(faceUrl: faceUrlFromUpload);
@@ -526,7 +719,7 @@ class BackendApi {
     String? character,
     String? moral,
     String? faceUrl,
-    List<io.File>? photos,
+    List<XFile>? photos,
     List<String>? existingPhotoUrls,
   }) async {
     try {
@@ -560,7 +753,9 @@ class BackendApi {
 
       Child updatedChild;
       try {
-        updatedChild = Child.fromJson(response.data as Map<String, dynamic>);
+        print('[BackendApi] updateChild: Тип ответа: ${response.data.runtimeType}');
+        final data = _coerceToMap(response.data, context: 'updateChild');
+        updatedChild = Child.fromJson(data);
         print('[BackendApi] updateChild: Данные ребенка обновлены');
       } catch (e) {
         print('[BackendApi] updateChild: Ошибка парсинга ответа: $e');
@@ -571,7 +766,7 @@ class BackendApi {
       // ШАГ 2: Если есть новые фото, загружаем их через /children/{id}/photos
       if (photos != null && photos.isNotEmpty) {
         print('[BackendApi] updateChild: ✅ Начинаем загрузку ${photos.length} фотографий через /children/$id/photos');
-        print('[BackendApi] updateChild: Список файлов: ${photos.map((p) => p.path).join(", ")}');
+        print('[BackendApi] updateChild: Список файлов: ${photos.map((p) => p.name).join(", ")}');
         
         String? lastUploadedFaceUrl;
         int uploadedCount = 0;
@@ -581,11 +776,11 @@ class BackendApi {
         for (int i = 0; i < photos.length; i++) {
           final photo = photos[i];
           try {
-            print('[BackendApi] updateChild: 📤 Загрузка фото ${i + 1}/${photos.length}: ${photo.path}');
+            print('[BackendApi] updateChild: 📤 Загрузка фото ${i + 1}/${photos.length}: ${photo.name}');
             
-          // ВАЖНО: uploadChildPhoto отправляет POST /children/{id}/photos
+          // ВАЖНО: используем кроссплатформенный uploadChildPhotoXFile
           // child_id передается ТОЛЬКО в URL, НЕ в FormData
-            final faceUrlFromUpload = await uploadChildPhoto(photo, id);
+            final faceUrlFromUpload = await uploadChildPhotoXFile(photo, id);
             lastUploadedFaceUrl = faceUrlFromUpload;
             uploadedCount++;
             
@@ -1485,7 +1680,8 @@ class BackendApi {
       print('[BackendApi] [API RESPONSE] Data: ${response.data}');
       
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = response.data as Map<String, dynamic>;
+        print('[BackendApi] [API RESPONSE] Data type: ${response.data.runtimeType}');
+        final data = _coerceToMap(response.data, context: 'generateFinalVersion');
         return GenerateFullBookResponse.fromJson(data);
       }
       throw Exception('Не удалось отправить на финальную генерацию: статус ${response.statusCode}');
@@ -1512,6 +1708,32 @@ class BackendApi {
       }
       throw Exception('Ошибка отправки на генерацию: $errorMessage');
     }
+  }
+
+  Map<String, dynamic> _coerceToMap(dynamic data, {required String context}) {
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+    if (data is List && data.isNotEmpty && data.first is Map) {
+      return Map<String, dynamic>.from(data.first as Map);
+    }
+    if (data is String) {
+      try {
+        final decoded = jsonDecode(data);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+        if (decoded is List && decoded.isNotEmpty && decoded.first is Map) {
+          return Map<String, dynamic>.from(decoded.first as Map);
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
+    throw FormatException('Некорректный ответ от сервера: ожидается JSON-объект ($context)');
   }
 
   /// Финализирует книгу

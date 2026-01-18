@@ -4,6 +4,7 @@ import '../../core/theme/app_theme_magic.dart';
 import '../../core/widgets/magic/glassmorphic_card.dart';
 import 'asset_icon.dart';
 import '../../core/utils/text_style_helpers.dart';
+import '../../core/utils/image_url.dart';
 
 /// Анимированная карточка ребёнка с фото-каруселью и действиями
 class MagicChildCard extends StatefulWidget {
@@ -193,7 +194,7 @@ class _MagicChildCardState extends State<MagicChildCard>
                     itemCount: photoUrls.length,
                     itemBuilder: (context, index) {
                       return Image.network(
-                        photoUrls[index],
+                        ImageUrl.resolve(photoUrls[index]),
                         fit: BoxFit.cover,
                         loadingBuilder: (context, child, loadingProgress) {
                           if (loadingProgress == null) return child;

@@ -16,6 +16,7 @@ import '../../../core/utils/text_style_helpers.dart';
 import '../../../core/api/backend_api.dart';
 import '../../../core/widgets/magic/magic_text.dart';
 import '../../../core/presentation/design_system/app_colors.dart';
+import '../../../ui/layouts/desktop_container.dart';
 
 class HomeScreen extends HookConsumerWidget {
   const HomeScreen({super.key});
@@ -24,6 +25,18 @@ class HomeScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final fadeAnimation = useAnimationController(
       duration: const Duration(milliseconds: 800),
+    );
+    final slideAnimation = useMemoized(
+      () => Tween<Offset>(
+        begin: const Offset(0, 0.04),
+        end: Offset.zero,
+      ).animate(
+        CurvedAnimation(
+          parent: fadeAnimation,
+          curve: Curves.easeOutCubic,
+        ),
+      ),
+      [fadeAnimation],
     );
     final booksAsync = ref.watch(booksProvider);
 
@@ -105,11 +118,14 @@ class HomeScreen extends HookConsumerWidget {
         ),
         body: FadeTransition(
           opacity: fadeAnimation,
-          child: SingleChildScrollView(
-            padding: AppSpacing.paddingMD,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: SlideTransition(
+            position: slideAnimation,
+            child: DesktopContainer.page(
+              child: SingleChildScrollView(
+                padding: AppSpacing.paddingMD,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 const SizedBox(height: AppSpacing.lg),
                 
                 // Приветствие с градиентом
@@ -149,98 +165,169 @@ class HomeScreen extends HookConsumerWidget {
                 const SizedBox(height: AppSpacing.xl),
                 
                 // Главная кнопка - Создать книгу
-                AppMagicCard(
-                  onTap: () {
-                    debugPrint('[NAV] Home → /app/generate');
-                    context.go(RouteNames.generate);
-                  },
-                  selected: false,
-                  padding: AppSpacing.paddingLG,
-                  child: Row(
-                    children: [
-                      // Убрали Container с BoxDecoration (gradient и boxShadow) - теперь просто иконка без ореола
-                      AssetIcon(
-                        assetPath: AppIcons.generateStory,
-                        size: 64,
-                        color: AppColors.primary,
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 960),
+                    child: _HoverScale(
+                      child: AppMagicCard(
+                        onTap: () {
+                          debugPrint('[NAV] Home → /app/generate');
+                          context.go(RouteNames.generate);
+                        },
+                        selected: false,
+                        padding: AppSpacing.paddingLG,
+                        child: Row(
                           children: [
-                            Row(
-                              children: [
-                                AssetIcon(
-                                  assetPath: AppIcons.magicStar,
-                                  size: 20,
-                                  color: AppColors.accent,
-                                ),
-                                const SizedBox(width: AppSpacing.xs),
-                                Text(
-                                  'Создать книгу',
-                                  style: safeCopyWith(
-                                    AppTypography.headlineSmall,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
+                            // Убрали Container с BoxDecoration (gradient и boxShadow) - теперь просто иконка без ореола
+                            AssetIcon(
+                              assetPath: AppIcons.generateStory,
+                              size: 64,
+                              color: AppColors.primary,
                             ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              'Персонализированная история для вашего ребёнка',
-                              style: safeCopyWith(
-                                AppTypography.bodySmall,
-                                color: AppColors.onSurfaceVariant,
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      AssetIcon(
+                                        assetPath: AppIcons.magicStar,
+                                        size: 20,
+                                        color: AppColors.accent,
+                                      ),
+                                      const SizedBox(width: AppSpacing.xs),
+                                      Text(
+                                        'Создать книгу',
+                                        style: safeCopyWith(
+                                          AppTypography.headlineSmall,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Text(
+                                    'Персонализированная история для вашего ребёнка',
+                                    style: safeCopyWith(
+                                      AppTypography.bodySmall,
+                                      color: AppColors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
                 
                 const SizedBox(height: AppSpacing.lg),
                 
                 // Короткие карточки
-                Row(
-                  children: shortcuts.map((item) {
-                    return Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          right: item != shortcuts.last ? AppSpacing.sm : 0,
-                        ),
-                        child: AppMagicCard(
-                          onTap: item.onTap,
-                          padding: AppSpacing.paddingMD,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              AssetIcon(
-                                assetPath: item.icon,
-                                size: 48,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isDesktop = constraints.maxWidth >= 1024;
+                    const gap = 28.0;
+                    const cardWidth = 280.0;
+                    final maxGridWidth = cardWidth * 3 + gap * 2;
+
+                    if (!isDesktop) {
+                      return Row(
+                        children: shortcuts.map((item) {
+                          return Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                right: item != shortcuts.last ? AppSpacing.sm : 0,
                               ),
-                              const SizedBox(height: AppSpacing.sm),
-                              SizedBox(
-                                height: 40,
-                                child: Text(
-                                  item.label,
-                                  textAlign: TextAlign.center,
-                                  style: safeCopyWith(
-                                    AppTypography.labelLarge,
-                                    fontWeight: FontWeight.bold,
+                              child: _HoverScale(
+                                child: AppMagicCard(
+                                  onTap: item.onTap,
+                                  padding: AppSpacing.paddingMD,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      AssetIcon(
+                                        assetPath: item.icon,
+                                        size: 48,
+                                      ),
+                                      const SizedBox(height: AppSpacing.sm),
+                                      SizedBox(
+                                        height: 40,
+                                        child: Text(
+                                          item.label,
+                                          textAlign: TextAlign.center,
+                                          style: safeCopyWith(
+                                            AppTypography.labelLarge,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ],
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    }
+
+                    return Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxGridWidth),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: gap,
+                            mainAxisSpacing: gap,
+                            childAspectRatio: 1.25,
                           ),
+                          itemCount: shortcuts.length,
+                          itemBuilder: (context, index) {
+                            final item = shortcuts[index];
+                            return _HoverScale(
+                              child: AppMagicCard(
+                                onTap: item.onTap,
+                                padding: AppSpacing.paddingMD,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    AssetIcon(
+                                      assetPath: item.icon,
+                                      size: 48,
+                                    ),
+                                    const SizedBox(height: AppSpacing.sm),
+                                    SizedBox(
+                                      height: 40,
+                                      child: Text(
+                                        item.label,
+                                        textAlign: TextAlign.center,
+                                        style: safeCopyWith(
+                                          AppTypography.labelLarge,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     );
-                  }).toList(),
+                  },
                 ),
                 
                 const SizedBox(height: AppSpacing.xl),
@@ -262,79 +349,87 @@ class HomeScreen extends HookConsumerWidget {
                           style: safeCopyWith(AppTypography.headlineSmall),
                         ),
                         const SizedBox(height: AppSpacing.md),
-                        SizedBox(
-                          height: 200,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: recentBooks.length,
-                            itemBuilder: (context, index) {
-                              final book = recentBooks[index];
-                              return Container(
-                                width: 140,
-                                height: 200,
-                                margin: EdgeInsets.only(
-                                  right: index < recentBooks.length - 1
-                                      ? AppSpacing.md
-                                      : 0,
-                                ),
-                                child: AppMagicCard(
-                                  onTap: () => context.go(RouteNames.bookView.replaceAll(':id', book.id)),
-                                  padding: EdgeInsets.zero,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      // Обложка с фиксированным соотношением сторон
-                                      AspectRatio(
-                                        aspectRatio: 140 / 120,
-                                        child: ClipRRect(
-                                          borderRadius: const BorderRadius.vertical(
-                                            top: Radius.circular(16),
-                                          ),
-                                          child: _RecentBookCoverImage(
-                                            coverUrl: book.coverUrl,
-                                            bookId: book.id,
-                                          ),
-                                        ),
-                                      ),
-                                      // Текстовая часть с гибкой высотой
-                                      Expanded(
-                                        child: Padding(
-                                        padding: AppSpacing.paddingSM,
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            mainAxisAlignment: MainAxisAlignment.start,
-                                            children: [
-                                              Flexible(
-                                                child: Text(
-                                                  book.title,
-                                                  style: safeCopyWith(AppTypography.labelLarge),
-                                                  maxLines: 2,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  softWrap: true,
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1000),
+                            child: SizedBox(
+                              height: 210,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: recentBooks.length,
+                                itemBuilder: (context, index) {
+                                  final book = recentBooks[index];
+                                  return Container(
+                                    width: 170,
+                                    height: 210,
+                                    margin: EdgeInsets.only(
+                                      right: index < recentBooks.length - 1
+                                          ? AppSpacing.md
+                                          : 0,
+                                    ),
+                                    child: _HoverScale(
+                                      child: AppMagicCard(
+                                        onTap: () => context.go(RouteNames.bookView.replaceAll(':id', book.id)),
+                                        padding: EdgeInsets.zero,
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            // Обложка с фиксированным соотношением сторон
+                                            AspectRatio(
+                                              aspectRatio: 170 / 130,
+                                              child: ClipRRect(
+                                                borderRadius: const BorderRadius.vertical(
+                                                  top: Radius.circular(16),
+                                                ),
+                                                child: _RecentBookCoverImage(
+                                                  coverUrl: book.coverUrl,
+                                                  bookId: book.id,
                                                 ),
                                               ),
-                                              const SizedBox(height: AppSpacing.xs),
-                                              Text(
-                                                'Книга',
-                                                style: safeCopyWith(
-                                                  AppTypography.bodySmall,
-                                                  color: AppColors.onSurfaceVariant,
+                                            ),
+                                            // Текстовая часть с гибкой высотой
+                                            Expanded(
+                                              child: Padding(
+                                              padding: AppSpacing.paddingSM,
+                                                child: Column(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  mainAxisAlignment: MainAxisAlignment.start,
+                                                  children: [
+                                                    Flexible(
+                                                      child: Text(
+                                                        book.title,
+                                                        style: safeCopyWith(AppTypography.labelLarge),
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        softWrap: true,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: AppSpacing.xs),
+                                                    Text(
+                                                      'Книга',
+                                                      style: safeCopyWith(
+                                                        AppTypography.bodySmall,
+                                                        color: AppColors.onSurfaceVariant,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      softWrap: false,
+                                                    ),
+                                                  ],
                                                 ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                softWrap: false,
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -345,9 +440,53 @@ class HomeScreen extends HookConsumerWidget {
                 ),
                 
                 const SizedBox(height: AppSpacing.xxl),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HoverScale extends StatefulWidget {
+  const _HoverScale({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_HoverScale> createState() => _HoverScaleState();
+}
+
+class _HoverScaleState extends State<_HoverScale> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedScale(
+        scale: _hovered ? 1.03 : 1.0,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            boxShadow: _hovered
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.18),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ]
+                : [],
+          ),
+          child: widget.child,
         ),
       ),
     );

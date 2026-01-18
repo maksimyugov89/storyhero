@@ -21,6 +21,12 @@ class AppPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget content = child;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth >= 1024;
+    final baseOverlay = (overlayOpacity + (isWide ? 0.12 : 0.0))
+        .clamp(0.0, 0.7);
+    final overlayTop = (baseOverlay + 0.12).clamp(0.0, 0.75);
+    final overlayBottom = (baseOverlay - 0.08).clamp(0.0, 0.6);
 
     if (safeArea) {
       content = SafeArea(child: content);
@@ -55,7 +61,16 @@ class AppPage extends StatelessWidget {
           // Overlay для читаемости
           if (backgroundImage != null)
             Container(
-              color: Colors.black.withOpacity(overlayOpacity),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.black.withOpacity(overlayTop),
+                    Colors.black.withOpacity(overlayBottom),
+                  ],
+                ),
+              ),
             ),
 
           // Контент

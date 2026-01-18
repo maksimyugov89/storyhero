@@ -1,13 +1,13 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:io' if (dart.library.html) 'dart:html' as io;
 import 'asset_icon.dart';
 import '../../core/utils/text_style_helpers.dart';
 
-// Тип для файлов (поддержка web/mobile)
-typedef PhotoFile = io.File;
+// Тип для файлов (поддержка web/mobile) - используем XFile для кроссплатформенности
+typedef PhotoFile = XFile;
 
 /// Компонент загрузки фото ребёнка с поддержкой до 5 фото
 class PhotoPreviewGrid extends StatefulWidget {
@@ -107,10 +107,9 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery);
     
-    if (image != null && image.path.isNotEmpty) {
-      final file = io.File(image.path);
+    if (image != null) {
       setState(() {
-        _localPhotos.add(file);
+        _localPhotos.add(image);
       });
       widget.onPhotosChanged?.call(_localPhotos);
       _animationController.forward(from: 0.0);
@@ -280,11 +279,23 @@ class _PhotoPreviewGridState extends State<PhotoPreviewGrid>
                               },
                             )
                           : photo is _LocalPhotoItem
-                              ? Image.file(
-                                  (photo as _LocalPhotoItem).file,
-                                  width: 100,
-                                  height: 100,
-                                  fit: BoxFit.cover,
+                              ? FutureBuilder<Uint8List>(
+                                  future: (photo as _LocalPhotoItem).file.readAsBytes(),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasData) {
+                                      return Image.memory(
+                                        snapshot.data!,
+                                        width: 100,
+                                        height: 100,
+                                        fit: BoxFit.cover,
+                                      );
+                                    }
+                                    return const SizedBox(
+                                      width: 100,
+                                      height: 100,
+                                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                    );
+                                  },
                                 )
                               : Container(
                                   color: primaryColor.withOpacity(0.1),

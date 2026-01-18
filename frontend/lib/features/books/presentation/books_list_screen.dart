@@ -16,6 +16,7 @@ import '../../../features/books/data/book_providers.dart';
 import '../../../core/models/book.dart';
 import 'book_view_screen.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import '../../../ui/layouts/desktop_container.dart';
 
 enum BookFilter { all, drafts, completed }
 
@@ -87,226 +88,362 @@ class BooksListScreen extends HookConsumerWidget {
             ),
           ],
         ),
-        body: Column(
-          children: [
-            // Фильтры
-            Padding(
-              padding: AppSpacing.paddingMD,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _FilterChip(
-                      label: 'Все',
-                      isSelected: selectedFilter.value == BookFilter.all,
-                      onTap: () {
-                        selectedFilter.value = BookFilter.all;
-                        context.go(RouteNames.books);
-                      },
-                    ),
-                  ),
-                  SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: _FilterChip(
-                      label: 'Черновики',
-                      icon: AppIcons.draftPages,
-                      isSelected: selectedFilter.value == BookFilter.drafts,
-                      onTap: () {
-                        selectedFilter.value = BookFilter.drafts;
-                        context.go('${RouteNames.books}?filter=drafts');
-                      },
-                    ),
-                  ),
-                  SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: _FilterChip(
-                      label: 'Готовые',
-                      icon: AppIcons.secureBook,
-                      isSelected: selectedFilter.value == BookFilter.completed,
-                      onTap: () {
-                        selectedFilter.value = BookFilter.completed;
-                        context.go('${RouteNames.books}?filter=completed');
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Список книг
-            Expanded(
-              child: booksAsync.when(
-                data: (books) {
-                  final filteredBooks = filterBooks(books, selectedFilter.value);
-                  
-                  if (filteredBooks.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          AssetIcon(
-                            assetPath: AppIcons.library,
-                            size: 64,
-                            color: AppColors.onSurfaceVariant.withOpacity(0.5),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                          Text(
-                            selectedFilter.value == BookFilter.all
-                                ? 'Нет книг'
-                                : selectedFilter.value == BookFilter.drafts
-                                    ? 'Нет черновиков'
-                                    : 'Нет готовых книг',
-                            style: safeCopyWith(
-                              AppTypography.headlineSmall,
-                              color: AppColors.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          Text(
-                            'Создайте первую книгу',
-                            style: safeCopyWith(
-                              AppTypography.bodyMedium,
-                              color: AppColors.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  
-                  return GridView.builder(
-                    padding: AppSpacing.paddingMD,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: AppSpacing.md,
-                      mainAxisSpacing: AppSpacing.md,
-                      childAspectRatio: 0.75,
-                    ),
-                    itemCount: filteredBooks.length,
-                    itemBuilder: (context, index) {
-                      final book = filteredBooks[index];
-                      final isDraft = book.status == 'draft' || book.status == 'editing';
-                      final isCompleted = book.status == 'completed' || book.status == 'finalized';
-                      
-                      return AppMagicCard(
-                        onTap: () => context.go(RouteNames.bookView.replaceAll(':id', book.id)),
-                        padding: EdgeInsets.zero,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Обложка
-                            ClipRRect(
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(16),
-                              ),
-                              child: Stack(
-                                children: [
-                                  // Используем coverUrl, если он есть, иначе пытаемся получить из первой сцены
-                                  _BookCoverImage(
-                                    coverUrl: book.coverUrl,
-                                    bookId: book.id,
-                                  ),
-                                  // Статус
-                                  Positioned(
-                                    top: AppSpacing.sm,
-                                    right: AppSpacing.sm,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: isCompleted
-                                            ? AppColors.success
-                                            : isDraft
-                                                ? AppColors.warning
-                                                : AppColors.info,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: AssetIcon(
-                                        assetPath: isCompleted
-                                            ? AppIcons.secureBook
-                                            : AppIcons.draftPages,
-                                        size: 16,
-                                        color: AppColors.onPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            // Информация
-                            Expanded(
-                              child: Padding(
-                                padding: AppSpacing.paddingSM,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        book.title,
-                                        style: safeCopyWith(
-                                          AppTypography.labelLarge,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(height: AppSpacing.xs),
-                                    Text(
-                                      'Книга',
-                                      style: safeCopyWith(
-                                        AppTypography.bodySmall,
-                                        color: AppColors.onSurfaceVariant,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, stack) => Center(
+        body: DesktopContainer.grid(
+          child: Column(
+            children: [
+              // Фильтры
+              Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
                   child: Padding(
                     padding: AppSpacing.paddingMD,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Row(
                       children: [
-                        AssetIcon(
-                          assetPath: AppIcons.alert,
-                          size: 64,
-                          color: AppColors.error,
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        Text(
-                          'Ошибка загрузки книг',
-                          style: safeCopyWith(
-                            AppTypography.headlineSmall,
-                            color: AppColors.error,
+                        Expanded(
+                          child: _FilterChip(
+                            label: 'Все',
+                            isSelected: selectedFilter.value == BookFilter.all,
+                            onTap: () {
+                              selectedFilter.value = BookFilter.all;
+                              context.go(RouteNames.books);
+                            },
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.md),
-                        Text(
-                          error.toString(),
-                          style: AppTypography.bodyMedium,
-                          textAlign: TextAlign.center,
+                        SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: _FilterChip(
+                            label: 'Черновики',
+                            icon: AppIcons.draftPages,
+                            isSelected: selectedFilter.value == BookFilter.drafts,
+                            onTap: () {
+                              selectedFilter.value = BookFilter.drafts;
+                              context.go('${RouteNames.books}?filter=drafts');
+                            },
+                          ),
+                        ),
+                        SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: _FilterChip(
+                            label: 'Готовые',
+                            icon: AppIcons.secureBook,
+                            isSelected: selectedFilter.value == BookFilter.completed,
+                            onTap: () {
+                              selectedFilter.value = BookFilter.completed;
+                              context.go('${RouteNames.books}?filter=completed');
+                            },
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+              
+              // Список книг
+              Expanded(
+                child: booksAsync.when(
+                  data: (books) {
+                    final filteredBooks = filterBooks(books, selectedFilter.value);
+                    
+                    if (filteredBooks.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            AssetIcon(
+                              assetPath: AppIcons.library,
+                              size: 64,
+                              color: AppColors.onSurfaceVariant.withOpacity(0.5),
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            Text(
+                              selectedFilter.value == BookFilter.all
+                                  ? 'Нет книг'
+                                  : selectedFilter.value == BookFilter.drafts
+                                      ? 'Нет черновиков'
+                                      : 'Нет готовых книг',
+                              style: safeCopyWith(
+                                AppTypography.headlineSmall,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              'Создайте первую книгу',
+                              style: safeCopyWith(
+                                AppTypography.bodyMedium,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final screenWidth = MediaQuery.of(context).size.width;
+                        final crossAxisCount = screenWidth >= 1600
+                            ? 4
+                            : screenWidth >= 1200
+                                ? 3
+                                : screenWidth >= 900
+                                    ? 2
+                                    : 1;
+                        const cardWidth = 300.0;
+                        const cardHeight = 380.0;
+                        const gap = 24.0;
+                        final gridWidth = cardWidth * crossAxisCount + gap * (crossAxisCount - 1);
+                        final maxGridWidth = gridWidth > constraints.maxWidth
+                            ? constraints.maxWidth
+                            : gridWidth;
+
+                        return Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: maxGridWidth),
+                            child: GridView.builder(
+                              padding: AppSpacing.paddingMD,
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                crossAxisSpacing: gap,
+                                mainAxisSpacing: gap,
+                                childAspectRatio: cardWidth / cardHeight,
+                              ),
+                              itemCount: filteredBooks.length,
+                              itemBuilder: (context, index) {
+                                final book = filteredBooks[index];
+                                final isDraft = book.status == 'draft' || book.status == 'editing';
+                                final isCompleted = book.status == 'completed' || book.status == 'finalized';
+                                
+                                return _AppearScaleFade(
+                                  delay: Duration(milliseconds: 40 * index),
+                                  child: _HoverLift(
+                                    child: AppMagicCard(
+                                      onTap: () => context.go(RouteNames.bookView.replaceAll(':id', book.id)),
+                                      padding: EdgeInsets.zero,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          // Обложка
+                                          ClipRRect(
+                                            borderRadius: const BorderRadius.vertical(
+                                              top: Radius.circular(16),
+                                            ),
+                                            child: Stack(
+                                              children: [
+                                                // Используем coverUrl, если он есть, иначе пытаемся получить из первой сцены
+                                                _BookCoverImage(
+                                                  coverUrl: book.coverUrl,
+                                                  bookId: book.id,
+                                                ),
+                                                // Статус
+                                                Positioned(
+                                                  top: AppSpacing.sm,
+                                                  right: AppSpacing.sm,
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: isCompleted
+                                                          ? AppColors.success
+                                                          : isDraft
+                                                              ? AppColors.warning
+                                                              : AppColors.info,
+                                                      borderRadius: BorderRadius.circular(12),
+                                                    ),
+                                                    child: AssetIcon(
+                                                      assetPath: isCompleted
+                                                          ? AppIcons.secureBook
+                                                          : AppIcons.draftPages,
+                                                      size: 16,
+                                                      color: AppColors.onPrimary,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          // Информация
+                                          Expanded(
+                                            child: Padding(
+                                              padding: AppSpacing.paddingSM,
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      book.title,
+                                                      style: safeCopyWith(
+                                                        AppTypography.labelLarge,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                      maxLines: 2,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: AppSpacing.xs),
+                                                  Text(
+                                                    'Книга',
+                                                    style: safeCopyWith(
+                                                      AppTypography.bodySmall,
+                                                      color: AppColors.onSurfaceVariant,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (error, stack) => Center(
+                    child: Padding(
+                      padding: AppSpacing.paddingMD,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          AssetIcon(
+                            assetPath: AppIcons.alert,
+                            size: 64,
+                            color: AppColors.error,
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                          Text(
+                            'Ошибка загрузки книг',
+                            style: safeCopyWith(
+                              AppTypography.headlineSmall,
+                              color: AppColors.error,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            error.toString(),
+                            style: AppTypography.bodyMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _AppearScaleFade extends StatefulWidget {
+  const _AppearScaleFade({
+    required this.child,
+    this.delay = Duration.zero,
+  });
+
+  final Widget child;
+  final Duration delay;
+
+  @override
+  State<_AppearScaleFade> createState() => _AppearScaleFadeState();
+}
+
+class _AppearScaleFadeState extends State<_AppearScaleFade>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _opacity = curve;
+    _scale = Tween(begin: 0.96, end: 1.0).animate(curve);
+
+    if (widget.delay == Duration.zero) {
+      _controller.forward();
+    } else {
+      Future.delayed(widget.delay, () {
+        if (mounted) {
+          _controller.forward();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: ScaleTransition(
+        scale: _scale,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _HoverLift extends StatefulWidget {
+  const _HoverLift({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_HoverLift> createState() => _HoverLiftState();
+}
+
+class _HoverLiftState extends State<_HoverLift> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _hovered ? -6 : 0, 0),
+        decoration: BoxDecoration(
+          boxShadow: _hovered
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ]
+              : [],
+        ),
+        child: widget.child,
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -20,7 +22,7 @@ import '../../../../ui/components/photo_preview_grid.dart';
 import '../../../../ui/components/asset_icon.dart';
 import '../presentation/children_list_screen.dart';
 import '../state/child_photos_provider.dart';
-import 'dart:io' if (dart.library.html) 'dart:html' as io;
+import '../../../../ui/layouts/desktop_container.dart';
 
 class ChildCreateScreen extends HookConsumerWidget {
   const ChildCreateScreen({super.key});
@@ -36,7 +38,7 @@ class ChildCreateScreen extends HookConsumerWidget {
     final moralController = useTextEditingController();
     final isLoading = useState(false);
     final errorMessage = useState<String?>(null);
-    final selectedPhotos = useState<List<io.File>>([]);
+    final selectedPhotos = useState<List<XFile>>([]);
     final fadeAnimation = useAnimationController(
       duration: const Duration(milliseconds: 800),
     );
@@ -131,11 +133,16 @@ class ChildCreateScreen extends HookConsumerWidget {
         ),
         body: FadeTransition(
           opacity: fadeAnimation,
-          child: SingleChildScrollView(
-            padding: AppSpacing.paddingMD,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+          child: DesktopContainer(
+            maxWidth: 1100,
+            child: SingleChildScrollView(
+              padding: AppSpacing.paddingMD,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                 const SizedBox(height: AppSpacing.lg),
                 
                 // Фото
@@ -146,11 +153,23 @@ class ChildCreateScreen extends HookConsumerWidget {
                       if (selectedPhotos.value.isNotEmpty)
                         ClipRRect(
                           borderRadius: BorderRadius.circular(16),
-                          child: Image.file(
-                            selectedPhotos.value.first,
-                            width: 150,
-                            height: 150,
-                            fit: BoxFit.cover,
+                          child: FutureBuilder<Uint8List>(
+                            future: selectedPhotos.value.first.readAsBytes(),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasData) {
+                                return Image.memory(
+                                  snapshot.data!,
+                                  width: 150,
+                                  height: 150,
+                                  fit: BoxFit.cover,
+                                );
+                              }
+                              return const SizedBox(
+                                width: 150,
+                                height: 150,
+                                child: Center(child: CircularProgressIndicator()),
+                              );
+                            },
                           ),
                         )
                       else
@@ -174,8 +193,8 @@ class ChildCreateScreen extends HookConsumerWidget {
                         onPressed: () async {
                           final picker = ImagePicker();
                           final image = await picker.pickImage(source: ImageSource.gallery);
-                          if (image != null && image.path.isNotEmpty) {
-                            selectedPhotos.value = [io.File(image.path)];
+                          if (image != null) {
+                            selectedPhotos.value = [image];
                           }
                         },
                       ),
@@ -364,7 +383,10 @@ class ChildCreateScreen extends HookConsumerWidget {
                 ),
                 
                 const SizedBox(height: AppSpacing.xl),
-              ],
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),

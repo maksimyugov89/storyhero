@@ -21,7 +21,7 @@ import '../presentation/children_list_screen.dart';
 import '../presentation/child_profile_screen.dart'; // Для childProvider
 import '../data/child_photos_provider.dart';
 import '../../../core/models/child_photo.dart';
-import 'dart:io' if (dart.library.html) 'dart:html' as io;
+import '../../../../ui/layouts/desktop_container.dart';
 
 class ChildEditScreen extends HookConsumerWidget {
   final Child child;
@@ -44,7 +44,7 @@ class ChildEditScreen extends HookConsumerWidget {
     final isLoading = useState(false);
     final isDeleting = useState(false);
     final errorMessage = useState<String?>(null);
-    final selectedPhotos = useState<List<io.File>>([]);
+    final selectedPhotos = useState<List<XFile>>([]);
     final photosAsync = ref.watch(childPhotosProvider(child.id));
     final fadeAnimation = useAnimationController(
       duration: const Duration(milliseconds: 800),
@@ -179,7 +179,7 @@ class ChildEditScreen extends HookConsumerWidget {
         final api = ref.read(backendApiProvider);
         
         final updatedChild = await api.updateChild(
-          id: child.id,
+          id: child.id.toString(),
           name: nameController.text.trim(),
           age: age,
           gender: selectedGender.value,
@@ -243,11 +243,16 @@ class ChildEditScreen extends HookConsumerWidget {
         ),
         body: FadeTransition(
           opacity: fadeAnimation,
-          child: SingleChildScrollView(
-            padding: AppSpacing.paddingMD,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+          child: DesktopContainer(
+            maxWidth: 1100,
+            child: SingleChildScrollView(
+              padding: AppSpacing.paddingMD,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                 const SizedBox(height: AppSpacing.lg),
                 
                 // Информационная подсказка
@@ -510,7 +515,10 @@ class ChildEditScreen extends HookConsumerWidget {
                 ),
                 
                 const SizedBox(height: AppSpacing.xl),
-              ],
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),

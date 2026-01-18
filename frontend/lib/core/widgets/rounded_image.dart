@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../utils/text_style_helpers.dart';
+import '../utils/image_url.dart';
 
 class RoundedImage extends StatelessWidget {
   final String? imageUrl;
@@ -47,7 +48,7 @@ class RoundedImage extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: CachedNetworkImage(
-        imageUrl: imageUrl!,
+        imageUrl: ImageUrl.resolve(imageUrl!),
         width: width,
         height: height,
         fit: fit,

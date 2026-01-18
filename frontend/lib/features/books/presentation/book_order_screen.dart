@@ -21,6 +21,7 @@ import '../../../core/widgets/address_input_fields.dart';
 import '../../../core/utils/phone_formatter.dart';
 import '../../../ui/components/asset_icon.dart';
 import '../data/book_providers.dart';
+import '../../../ui/layouts/desktop_container.dart';
 
 /// Размеры книги
 enum BookSize {
@@ -164,11 +165,17 @@ class BookOrderScreen extends HookConsumerWidget {
               }
             }
             
-            return Form(
-              key: formKey,
-              child: ListView(
-                padding: AppSpacing.paddingMD,
-                children: [
+            return DesktopContainer(
+              maxWidth: 1100,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Form(
+                    key: formKey,
+                    child: ListView(
+                      padding: AppSpacing.paddingMD,
+                      children: [
                   // Заголовок
                   _buildHeader(context, book.title, coverUrl),
                   
@@ -471,8 +478,11 @@ class BookOrderScreen extends HookConsumerWidget {
                     ),
                   ),
                   
-                  const SizedBox(height: AppSpacing.xxl),
-                ],
+                      const SizedBox(height: AppSpacing.xxl),
+                    ],
+                    ),
+                  ),
+                ),
               ),
             );
           },

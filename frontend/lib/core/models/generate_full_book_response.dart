@@ -18,17 +18,28 @@ class GenerateFullBookResponse {
   });
 
   factory GenerateFullBookResponse.fromJson(Map<String, dynamic> json) {
-    final taskId = json['task_id'] as String?;
-    // child_id может быть int (PostgreSQL) или String (UUID)
-    final childIdValue = json['child_id'];
-    final childId = childIdValue is int 
-        ? childIdValue.toString() 
-        : childIdValue as String?;
-    final message = (json['message'] as String?) ?? 'Книга генерируется';
+    final taskIdValue = json['task_id'] ?? json['taskId'] ?? json['id'];
+    final taskId = _stringFromDynamic(taskIdValue);
+    final message = (json['message'] as String?) ??
+        (json['detail'] as String?) ??
+        'Книга генерируется';
 
-    if (taskId == null || childId == null) {
+    dynamic childIdValue = json['child_id'] ??
+        json['childId'] ??
+        json['book_id'] ??
+        json['bookId'];
+    final meta = json['meta'];
+    if (childIdValue == null && meta is Map) {
+      childIdValue = meta['child_id'] ??
+          meta['childId'] ??
+          meta['book_id'] ??
+          meta['bookId'];
+    }
+    final childId = _stringFromDynamic(childIdValue) ?? '';
+
+    if (taskId == null || taskId.isEmpty) {
       throw const FormatException(
-        'Некорректный ответ от сервера: отсутствуют обязательные поля',
+        'Некорректный ответ от сервера: отсутствует task_id',
       );
     }
 
@@ -48,3 +59,9 @@ class GenerateFullBookResponse {
   }
 }
 
+String? _stringFromDynamic(dynamic value) {
+  if (value == null) return null;
+  if (value is String) return value;
+  if (value is num) return value.toString();
+  return value.toString();
+}

@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/models/user.dart' as app_models;
 import '../../../core/auth/auth_status.dart';
 import '../../../core/auth/auth_status_provider.dart';
+import '../../../core/storage/storage_service.dart';
 
-const _storage = FlutterSecureStorage();
 const _tokenKey = 'access_token';
 const _userIdKey = 'user_id';
 const _userEmailKey = 'user_email';
@@ -46,7 +45,7 @@ class AuthRepository {
 
   /// Проверяет наличие токена и обновляет состояние авторизации
   Future<void> _checkAuthState() async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = await StorageService.read(_tokenKey);
     final hasToken = token != null && token.isNotEmpty;
     
     // Обновляем единый источник истины
@@ -92,9 +91,9 @@ class AuthRepository {
           }
 
           // Сохраняем токен и данные пользователя
-          await _storage.write(key: _tokenKey, value: accessToken);
-          await _storage.write(key: _userIdKey, value: userIdStr);
-          await _storage.write(key: _userEmailKey, value: userEmail);
+          await StorageService.write(_tokenKey, accessToken);
+          await StorageService.write(_userIdKey, userIdStr);
+          await StorageService.write(_userEmailKey, userEmail);
 
           print('[AuthRepository] signIn: Успешный вход, токен сохранен');
           
@@ -274,9 +273,9 @@ class AuthRepository {
       }
       
           // Сохраняем токен и данные пользователя
-          await _storage.write(key: _tokenKey, value: accessToken);
-          await _storage.write(key: _userIdKey, value: userIdStr);
-          await _storage.write(key: _userEmailKey, value: userEmail);
+          await StorageService.write(_tokenKey, accessToken);
+          await StorageService.write(_userIdKey, userIdStr);
+          await StorageService.write(_userEmailKey, userEmail);
 
           print('[AuthRepository] signUp: Успешная регистрация, токен сохранен');
           
@@ -402,9 +401,9 @@ class AuthRepository {
     try {
       print('[AuthRepository] signOut: Выход из аккаунта');
       
-      await _storage.delete(key: _tokenKey);
-      await _storage.delete(key: _userIdKey);
-      await _storage.delete(key: _userEmailKey);
+      await StorageService.delete(_tokenKey);
+      await StorageService.delete(_userIdKey);
+      await StorageService.delete(_userEmailKey);
 
       // Обновляем единый источник истины
       _ref.read(authStatusProvider.notifier).state = AuthStatus.unauthenticated;
@@ -422,8 +421,8 @@ class AuthRepository {
   /// Получает текущего пользователя из хранилища
   Future<app_models.User?> currentUser() async {
     try {
-      final userId = await _storage.read(key: _userIdKey);
-      final userEmail = await _storage.read(key: _userEmailKey);
+      final userId = await StorageService.read(_userIdKey);
+      final userEmail = await StorageService.read(_userEmailKey);
       
       if (userId == null || userEmail == null) {
         return null;
@@ -442,7 +441,7 @@ class AuthRepository {
   /// Получает токен из хранилища
   Future<String?> token() async {
     try {
-      final token = await _storage.read(key: _tokenKey);
+      final token = await StorageService.read(_tokenKey);
       return token;
     } catch (e) {
       print('[AuthRepository] token: Ошибка получения токена: $e');

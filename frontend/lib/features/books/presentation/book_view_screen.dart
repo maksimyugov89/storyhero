@@ -19,6 +19,7 @@ import '../../../ui/components/asset_icon.dart';
 import '../../../core/api/backend_api.dart';
 import '../data/book_providers.dart';
 import '../../../core/utils/text_style_helpers.dart';
+import '../../../ui/layouts/desktop_container.dart';
 
 class BookViewScreen extends ConsumerStatefulWidget {
   final String bookId;
@@ -351,8 +352,10 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                 // Проверка готовности всех изображений с проверкой на пустой список
                 final allImagesReady = totalScenes > 0 && imagesReady == totalScenes;
 
-                return Column(
-                  children: [
+                return DesktopContainer(
+                  maxWidth: 1200,
+                  child: Column(
+                    children: [
                     // Индикатор прогресса создания изображений
                     if (!allImagesReady)
                       Container(
@@ -765,184 +768,121 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                           final nextScene = index < sortedScenes.length - 1 ? sortedScenes[index + 1] : null;
                           final prevScene = index > 0 ? sortedScenes[index - 1] : null;
                           
-                          return Padding(
-                            padding: AppSpacing.paddingMD,
-                            child: GestureDetector(
-                              onTapDown: (details) {
-                                // Определяем, на какую половину страницы нажали
-                                final screenWidth = MediaQuery.of(context).size.width;
-                                final tapX = details.globalPosition.dx;
-                                
-                                // Если нажали на правую половину - следующая страница
-                                if (tapX > screenWidth / 2 && index < sortedScenes.length - 1) {
-                                  // Запускаем анимацию переворота вперед
-                                  setState(() {
-                                    _pageFlipStates[index] = true;
-                                    _pageFlipDirection[index] = true; // вперед
-                                  });
-                                }
-                                // Если нажали на левую половину - предыдущая страница
-                                else if (tapX < screenWidth / 2 && index > 0) {
-                                  // Запускаем анимацию переворота назад
-                                  setState(() {
-                                    _pageFlipStates[index] = true;
-                                    _pageFlipDirection[index] = false; // назад
-                                  });
-                                }
-                              },
-                              child: PageFlipAnimation(
-                                isFlipped: _pageFlipStates[index] ?? false,
-                                frontPage: BookPage(
-                                  child: LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      if (!constraints.maxWidth.isFinite || !constraints.maxHeight.isFinite || 
-                                          constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
-                                        return const SizedBox.shrink();
-                                      }
-                                      
-                                      return Padding(
-                                        padding: AppSpacing.paddingLG,
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            // Заголовок сцены
-                                            Row(
-                                              children: [
-                                                Flexible(
-                                                  child: Container(
-                                                    padding: const EdgeInsets.symmetric(
-                                                      horizontal: 12,
-                                                      vertical: 6,
-                                                    ),
-                                                    decoration: BoxDecoration(
-                                                      gradient: AppColors.primaryGradient,
-                                                      borderRadius: BorderRadius.circular(20),
-                                                    ),
-                                                    child: Text(
-                                                      'Сцена ${scene.order}',
-                                                      style: safeCopyWith(
-                                                        AppTypography.labelMedium,
-                                                        color: AppColors.onPrimary,
-                                                        fontWeight: FontWeight.bold,
-                                                      ),
-                                                      overflow: TextOverflow.ellipsis,
-                                                      maxLines: 1,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            
-                                            const SizedBox(height: AppSpacing.lg),
-                                            
-                                            // Изображение или placeholder
-                                            Flexible(
-                                              flex: 3,
-                                              child: ConstrainedBox(
-                                                constraints: BoxConstraints(
-                                                  maxHeight: constraints.maxHeight * 0.55, // Максимум 55% от высоты
-                                                  minHeight: 150,
-                                                ),
-                                                child: hasImage && (scene.finalUrl != null || scene.draftUrl != null)
-                                                    ? ClipRRect(
-                                                        borderRadius: BorderRadius.circular(16),
-                                                        child: RoundedImage(
-                                                          imageUrl: scene.finalUrl ?? scene.draftUrl,
-                                                          height: double.infinity,
-                                                          width: double.infinity,
-                                                          radius: 16,
-                                                        ),
-                                                      )
-                                                    : ClipRRect(
-                                                        borderRadius: BorderRadius.circular(16),
-                                                        child: _buildImagePlaceholder(isLoading: isLoading),
-                                                      ),
-                                              ),
-                                            ),
-                                            
-                                            const SizedBox(height: AppSpacing.lg),
-                                            
-                                            // Текст с ограничением высоты
-                                            Flexible(
-                                              child: ConstrainedBox(
-                                                constraints: BoxConstraints(
-                                                  maxHeight: constraints.maxHeight * 0.25, // Максимум 25% от высоты
-                                                ),
-                                                child: SingleChildScrollView(
-                                                  child: Padding(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                                                    child: Text(
-                                                      scene.shortSummary,
-                                                      style: AppTypography.bodyLarge,
-                                                      maxLines: null,
-                                                      overflow: TextOverflow.visible,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  ),
+                          return AnimatedBuilder(
+                            animation: _pageController!,
+                            builder: (context, child) {
+                              final controller = _pageController;
+                              final page = controller != null && controller.hasClients
+                                  ? (controller.page ?? _currentPageIndex.toDouble())
+                                  : _currentPageIndex.toDouble();
+                              final distance = (page - index).abs().clamp(0.0, 1.0);
+                              final opacity = 1 - (distance * 0.25);
+                              final scale = 0.98 + (1 - distance) * 0.02;
+
+                              return Opacity(
+                                opacity: opacity,
+                                child: Transform.scale(
+                                  scale: scale,
+                                  child: child,
                                 ),
-                                backPage: nextScene != null
-                                    ? BookPage(
-                                        child: LayoutBuilder(
-                                          builder: (context, constraints) {
-                                            if (!constraints.maxWidth.isFinite || !constraints.maxHeight.isFinite || 
-                                                constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
-                                              return const SizedBox.shrink();
-                                            }
-                                            
-                                            return Padding(
-                                              padding: AppSpacing.paddingLG,
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                mainAxisSize: MainAxisSize.min,
+                              );
+                            },
+                            child: Padding(
+                              padding: AppSpacing.paddingMD,
+                              child: GestureDetector(
+                                onTapDown: (details) {
+                                  // Определяем, на какую половину страницы нажали
+                                  final screenWidth = MediaQuery.of(context).size.width;
+                                  final tapX = details.globalPosition.dx;
+                                  
+                                  // Если нажали на правую половину - следующая страница
+                                  if (tapX > screenWidth / 2 && index < sortedScenes.length - 1) {
+                                    // Запускаем анимацию переворота вперед
+                                    setState(() {
+                                      _pageFlipStates[index] = true;
+                                      _pageFlipDirection[index] = true; // вперед
+                                    });
+                                  }
+                                  // Если нажали на левую половину - предыдущая страница
+                                  else if (tapX < screenWidth / 2 && index > 0) {
+                                    // Запускаем анимацию переворота назад
+                                    setState(() {
+                                      _pageFlipStates[index] = true;
+                                      _pageFlipDirection[index] = false; // назад
+                                    });
+                                  }
+                                },
+                                child: PageFlipAnimation(
+                                  isFlipped: _pageFlipStates[index] ?? false,
+                                  frontPage: BookPage(
+                                    child: LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        if (!constraints.maxWidth.isFinite || !constraints.maxHeight.isFinite || 
+                                            constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        
+                                        return Padding(
+                                          padding: AppSpacing.paddingLG,
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              // Заголовок сцены
+                                              Row(
                                                 children: [
-                                                  Row(
-                                                    children: [
-                                                      Flexible(
-                                                        child: Container(
-                                                          padding: const EdgeInsets.symmetric(
-                                                            horizontal: 12,
-                                                            vertical: 6,
-                                                          ),
-                                                          decoration: BoxDecoration(
-                                                            gradient: AppColors.primaryGradient,
-                                                            borderRadius: BorderRadius.circular(20),
-                                                          ),
-                                                          child: Text(
-                                                            'Сцена ${nextScene.order}',
-                                                            style: safeCopyWith(
-                                                              AppTypography.labelMedium,
-                                                              color: AppColors.onPrimary,
-                                                              fontWeight: FontWeight.bold,
-                                                            ),
-                                                            overflow: TextOverflow.ellipsis,
-                                                            maxLines: 1,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: AppSpacing.lg),
                                                   Flexible(
-                                                    flex: 3,
-                                                    child: ConstrainedBox(
-                                                      constraints: BoxConstraints(
-                                                        maxHeight: constraints.maxHeight * 0.55, // Максимум 55% от высоты
-                                                        minHeight: 150,
+                                                    child: Container(
+                                                      padding: const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 6,
                                                       ),
-                                                      child: ((nextScene.finalUrl?.isNotEmpty ?? false) || (nextScene.draftUrl?.isNotEmpty ?? false)) && 
-                                                             (nextScene.finalUrl != null || nextScene.draftUrl != null)
+                                                      decoration: BoxDecoration(
+                                                        gradient: AppColors.primaryGradient,
+                                                        borderRadius: BorderRadius.circular(20),
+                                                      ),
+                                                      child: Text(
+                                                        'Сцена ${scene.order}',
+                                                        style: safeCopyWith(
+                                                          AppTypography.labelMedium,
+                                                          color: AppColors.onPrimary,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                        overflow: TextOverflow.ellipsis,
+                                                        maxLines: 1,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              
+                                              const SizedBox(height: AppSpacing.lg),
+                                              
+                                              // Изображение или placeholder
+                                              Flexible(
+                                                flex: 3,
+                                                child: Align(
+                                                  alignment: Alignment.topCenter,
+                                                  child: ConstrainedBox(
+                                                    constraints: BoxConstraints(
+                                                      maxHeight: constraints.maxHeight * 0.48, // Ограничение высоты
+                                                      minHeight: 150,
+                                                    ),
+                                                    child: TweenAnimationBuilder<double>(
+                                                      tween: Tween(begin: 1.03, end: 1.0),
+                                                      duration: const Duration(milliseconds: 420),
+                                                      curve: Curves.easeOutCubic,
+                                                      builder: (context, value, child) {
+                                                        return Transform.scale(
+                                                          scale: value,
+                                                          child: child,
+                                                        );
+                                                      },
+                                                      child: hasImage && (scene.finalUrl != null || scene.draftUrl != null)
                                                           ? ClipRRect(
                                                               borderRadius: BorderRadius.circular(16),
                                                               child: RoundedImage(
-                                                                imageUrl: nextScene.finalUrl ?? nextScene.draftUrl,
+                                                                imageUrl: scene.finalUrl ?? scene.draftUrl,
                                                                 height: double.infinity,
                                                                 width: double.infinity,
                                                                 radius: 16,
@@ -950,21 +890,30 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                                                             )
                                                           : ClipRRect(
                                                               borderRadius: BorderRadius.circular(16),
-                                                              child: _buildImagePlaceholder(isLoading: !((nextScene.finalUrl?.isNotEmpty ?? false) || (nextScene.draftUrl?.isNotEmpty ?? false))),
+                                                              child: _buildImagePlaceholder(isLoading: isLoading),
                                                             ),
                                                     ),
                                                   ),
-                                                  const SizedBox(height: AppSpacing.lg),
-                                                  Flexible(
-                                                    child: ConstrainedBox(
-                                                      constraints: BoxConstraints(
-                                                        maxHeight: constraints.maxHeight * 0.25, // Максимум 25% от высоты
-                                                      ),
-                                                      child: SingleChildScrollView(
+                                                ),
+                                              ),
+                                              
+                                              const SizedBox(height: AppSpacing.lg),
+                                              
+                                              // Текст с ограничением высоты
+                                              Flexible(
+                                                child: ConstrainedBox(
+                                                  constraints: BoxConstraints(
+                                                    maxHeight: constraints.maxHeight * 0.25, // Максимум 25% от высоты
+                                                  ),
+                                                  child: SingleChildScrollView(
+                                                    child: Align(
+                                                      alignment: Alignment.topCenter,
+                                                      child: ConstrainedBox(
+                                                        constraints: const BoxConstraints(maxWidth: 720),
                                                         child: Padding(
                                                           padding: const EdgeInsets.symmetric(horizontal: 4),
                                                           child: Text(
-                                                            nextScene.shortSummary,
+                                                            scene.shortSummary,
                                                             style: AppTypography.bodyLarge,
                                                             maxLines: null,
                                                             overflow: TextOverflow.visible,
@@ -973,52 +922,166 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                                                       ),
                                                     ),
                                                   ),
-                                                ],
+                                                ),
                                               ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  backPage: nextScene != null
+                                      ? BookPage(
+                                          child: LayoutBuilder(
+                                            builder: (context, constraints) {
+                                              if (!constraints.maxWidth.isFinite || !constraints.maxHeight.isFinite || 
+                                                  constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+                                                return const SizedBox.shrink();
+                                              }
+                                              
+                                              return Padding(
+                                                padding: AppSpacing.paddingLG,
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        Flexible(
+                                                          child: Container(
+                                                            padding: const EdgeInsets.symmetric(
+                                                              horizontal: 12,
+                                                              vertical: 6,
+                                                            ),
+                                                            decoration: BoxDecoration(
+                                                              gradient: AppColors.primaryGradient,
+                                                              borderRadius: BorderRadius.circular(20),
+                                                            ),
+                                                            child: Text(
+                                                              'Сцена ${nextScene.order}',
+                                                              style: safeCopyWith(
+                                                                AppTypography.labelMedium,
+                                                                color: AppColors.onPrimary,
+                                                                fontWeight: FontWeight.bold,
+                                                              ),
+                                                              overflow: TextOverflow.ellipsis,
+                                                              maxLines: 1,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: AppSpacing.lg),
+                                                    Flexible(
+                                                      flex: 3,
+                                                      child: Align(
+                                                        alignment: Alignment.topCenter,
+                                                        child: ConstrainedBox(
+                                                          constraints: BoxConstraints(
+                                                            maxHeight: constraints.maxHeight * 0.48,
+                                                            minHeight: 150,
+                                                          ),
+                                                          child: TweenAnimationBuilder<double>(
+                                                            tween: Tween(begin: 1.03, end: 1.0),
+                                                            duration: const Duration(milliseconds: 420),
+                                                            curve: Curves.easeOutCubic,
+                                                            builder: (context, value, child) {
+                                                              return Transform.scale(
+                                                                scale: value,
+                                                                child: child,
+                                                              );
+                                                            },
+                                                            child: ((nextScene.finalUrl?.isNotEmpty ?? false) || (nextScene.draftUrl?.isNotEmpty ?? false)) && 
+                                                                   (nextScene.finalUrl != null || nextScene.draftUrl != null)
+                                                                ? ClipRRect(
+                                                                    borderRadius: BorderRadius.circular(16),
+                                                                    child: RoundedImage(
+                                                                      imageUrl: nextScene.finalUrl ?? nextScene.draftUrl,
+                                                                      height: double.infinity,
+                                                                      width: double.infinity,
+                                                                      radius: 16,
+                                                                    ),
+                                                                  )
+                                                                : ClipRRect(
+                                                                    borderRadius: BorderRadius.circular(16),
+                                                                    child: _buildImagePlaceholder(isLoading: !((nextScene.finalUrl?.isNotEmpty ?? false) || (nextScene.draftUrl?.isNotEmpty ?? false))),
+                                                                  ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: AppSpacing.lg),
+                                                    Flexible(
+                                                      child: ConstrainedBox(
+                                                        constraints: BoxConstraints(
+                                                          maxHeight: constraints.maxHeight * 0.25, // Максимум 25% от высоты
+                                                        ),
+                                                        child: SingleChildScrollView(
+                                                          child: Align(
+                                                            alignment: Alignment.topCenter,
+                                                            child: ConstrainedBox(
+                                                              constraints: const BoxConstraints(maxWidth: 720),
+                                                              child: Padding(
+                                                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                                                child: Text(
+                                                                  nextScene.shortSummary,
+                                                                  style: AppTypography.bodyLarge,
+                                                                  maxLines: null,
+                                                                  overflow: TextOverflow.visible,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        )
+                                      : null,
+                                  onFlipComplete: () {
+                                    // После завершения анимации переворота переключаем страницу
+                                    if (mounted) {
+                                      final wasFlipped = _pageFlipStates[index] ?? false;
+                                      final direction = _pageFlipDirection[index] ?? true;
+                                      
+                                      if (wasFlipped) {
+                                        // Небольшая задержка для более плавного перехода
+                                        Future.delayed(const Duration(milliseconds: 50), () {
+                                          if (!mounted) return;
+                                          
+                                          // Переключаем страницу в нужном направлении
+                                          if (direction && index < sortedScenes.length - 1) {
+                                            // Вперед - следующая страница
+                                            _pageController?.nextPage(
+                                              duration: const Duration(milliseconds: 400),
+                                              curve: Curves.easeInOutCubic,
                                             );
-                                          },
-                                        ),
-                                      )
-                                    : null,
-                                onFlipComplete: () {
-                                  // После завершения анимации переворота переключаем страницу
-                                  if (mounted) {
-                                    final wasFlipped = _pageFlipStates[index] ?? false;
-                                    final direction = _pageFlipDirection[index] ?? true;
-                                    
-                                    if (wasFlipped) {
-                                      // Небольшая задержка для более плавного перехода
-                                      Future.delayed(const Duration(milliseconds: 50), () {
-                                        if (!mounted) return;
-                                        
-                                        // Переключаем страницу в нужном направлении
-                                        if (direction && index < sortedScenes.length - 1) {
-                                          // Вперед - следующая страница
-                                          _pageController?.nextPage(
-                                            duration: const Duration(milliseconds: 400),
-                                            curve: Curves.easeInOutCubic,
-                                          );
-                                        } else if (!direction && index > 0) {
-                                          // Назад - предыдущая страница
-                                          _pageController?.previousPage(
-                                            duration: const Duration(milliseconds: 400),
-                                            curve: Curves.easeInOutCubic,
-                                          );
-                                        }
-                                        
-                                        // Сбрасываем состояние переворота после небольшой задержки
-                                        Future.delayed(const Duration(milliseconds: 100), () {
-                                          if (mounted) {
-                                            setState(() {
-                                              _pageFlipStates.remove(index);
-                                              _pageFlipDirection.remove(index);
-                                            });
+                                          } else if (!direction && index > 0) {
+                                            // Назад - предыдущая страница
+                                            _pageController?.previousPage(
+                                              duration: const Duration(milliseconds: 400),
+                                              curve: Curves.easeInOutCubic,
+                                            );
                                           }
+                                          
+                                          // Сбрасываем состояние переворота после небольшой задержки
+                                          Future.delayed(const Duration(milliseconds: 100), () {
+                                            if (mounted) {
+                                              setState(() {
+                                                _pageFlipStates.remove(index);
+                                                _pageFlipDirection.remove(index);
+                                              });
+                                            }
+                                          });
                                         });
-                                      });
+                                      }
                                     }
-                                  }
-                                },
+                                  },
+                                ),
                               ),
                             ),
                           );
@@ -1029,58 +1092,65 @@ class _BookViewScreenState extends ConsumerState<BookViewScreen> {
                     // Индикатор страниц
                     Padding(
                       padding: AppSpacing.paddingMD,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                            icon: AssetIcon(
-                              assetPath: AppIcons.back,
-                              size: 20,
-                              color: _currentPageIndex > 0
-                                  ? AppColors.onSurface
-                                  : AppColors.onSurfaceVariant,
-                            ),
-                            onPressed: _currentPageIndex > 0
-                                ? () {
-                                    _pageController?.previousPage(
-                                      duration: const Duration(milliseconds: 400),
-                                      curve: Curves.easeInOutCubic,
-                                    );
-                                  }
-                                : null,
-                          ),
-                          Padding(
-                            padding: AppSpacing.paddingHMD,
-                            child: Text(
-                              '${_currentPageIndex + 1} / ${sortedScenes.length}',
-                              style: AppTypography.labelLarge,
-                            ),
-                          ),
-                          IconButton(
-                            icon: Transform.rotate(
-                              angle: 3.14159, // 180 градусов
-                              child: AssetIcon(
-                                assetPath: AppIcons.back,
-                                size: 20,
-                                color: _currentPageIndex < sortedScenes.length - 1
-                                    ? AppColors.onSurface
-                                    : AppColors.onSurfaceVariant,
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 320),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              IconButton(
+                                icon: AssetIcon(
+                                  assetPath: AppIcons.back,
+                                  size: 20,
+                                  color: _currentPageIndex > 0
+                                      ? AppColors.onSurface
+                                      : AppColors.onSurfaceVariant,
+                                ),
+                                onPressed: _currentPageIndex > 0
+                                    ? () {
+                                        _pageController?.previousPage(
+                                          duration: const Duration(milliseconds: 400),
+                                          curve: Curves.easeInOutCubic,
+                                        );
+                                      }
+                                    : null,
                               ),
-                            ),
-                            onPressed: _currentPageIndex < sortedScenes.length - 1
-                                ? () {
-                                    _pageController?.nextPage(
-                                      duration: const Duration(milliseconds: 400),
-                                      curve: Curves.easeInOutCubic,
-                                    );
-                                  }
-                                : null,
+                              Padding(
+                                padding: AppSpacing.paddingHMD,
+                                child: Text(
+                                  '${_currentPageIndex + 1} / ${sortedScenes.length}',
+                                  style: AppTypography.labelLarge,
+                                ),
+                              ),
+                              IconButton(
+                                icon: Transform.rotate(
+                                  angle: 3.14159, // 180 градусов
+                                  child: AssetIcon(
+                                    assetPath: AppIcons.back,
+                                    size: 20,
+                                    color: _currentPageIndex < sortedScenes.length - 1
+                                        ? AppColors.onSurface
+                                        : AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                                onPressed: _currentPageIndex < sortedScenes.length - 1
+                                    ? () {
+                                        _pageController?.nextPage(
+                                          duration: const Duration(milliseconds: 400),
+                                          curve: Curves.easeInOutCubic,
+                                        );
+                                      }
+                                    : null,
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ],
-                );
+                ),
+              );
               },
               loading: () => const LoadingWidget(),
               error: (error, stack) {

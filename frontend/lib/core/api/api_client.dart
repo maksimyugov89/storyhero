@@ -1,16 +1,22 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../features/auth/data/auth_repository.dart';
 import '../../env/env.dart';
+import '../storage/storage_service.dart';
 
 final dioProvider = Provider<Dio>((ref) {
   final dio = Dio(BaseOptions(
     baseUrl: Env.backendUrl,
     connectTimeout: const Duration(milliseconds: 8000),
     receiveTimeout: const Duration(milliseconds: 60000), // 1 минута для генерации картинок
+    headers: {
+      'Content-Type': 'application/json',
+    },
   ));
+  
+  // Примечание: CORS должен быть настроен на стороне backend
+  // Backend должен разрешать запросы с localhost для разработки
 
   // Добавляем retry interceptor (должен быть первым)
   dio.interceptors.add(RetryInterceptor(dio: dio));
@@ -118,10 +124,9 @@ class AuthInterceptor extends Interceptor {
     RequestInterceptorHandler handler,
   ) async {
     try {
-      // Получаем токен напрямую из FlutterSecureStorage, чтобы избежать циклической зависимости
-      const storage = FlutterSecureStorage();
+      // Используем кроссплатформенный StorageService
       const tokenKey = 'access_token';
-      final token = await storage.read(key: tokenKey);
+      final token = await StorageService.read(tokenKey);
       
       if (token == null) {
         print('[AuthInterceptor] ❌ Токен отсутствует -> ${options.uri}');
@@ -149,14 +154,13 @@ class AuthInterceptor extends Interceptor {
     if (err.response?.statusCode == 401) {
       print('[AuthInterceptor] Обнаружена ошибка 401 - пользователь неавторизован');
       try {
-        // Удаляем токен напрямую из хранилища, чтобы избежать циклической зависимости
-        const storage = FlutterSecureStorage();
+        // Удаляем токен через кроссплатформенный StorageService
         const tokenKey = 'access_token';
         const userIdKey = 'user_id';
         const userEmailKey = 'user_email';
-        storage.delete(key: tokenKey);
-        storage.delete(key: userIdKey);
-        storage.delete(key: userEmailKey);
+        StorageService.delete(tokenKey);
+        StorageService.delete(userIdKey);
+        StorageService.delete(userEmailKey);
         print('[AuthInterceptor] Токен удален из хранилища');
 
         // Уведомляем AuthRepository, чтобы перевести приложение на экран логина
