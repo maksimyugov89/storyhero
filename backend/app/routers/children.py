@@ -34,12 +34,7 @@ class ChildCreateRequest(BaseModel):
     fears: str = ""
     character: str = ""
     moral: str = ""
-    
-    @validator('gender')
-    def validate_gender(cls, v):
-        if v not in ['male', 'female']:
-            raise ValueError("Поле 'gender' должно быть 'male' или 'female'")
-        return v
+    # Валидатор не нужен - Pydantic автоматически проверяет Enum
 
 
 class ChildUpdateRequest(BaseModel):
@@ -50,12 +45,8 @@ class ChildUpdateRequest(BaseModel):
     fears: Optional[str] = None
     character: Optional[str] = None
     moral: Optional[str] = None
-    
-    @validator('gender')
-    def validate_gender(cls, v):
-        if v is not None and v not in ['male', 'female']:
-            raise ValueError("Поле 'gender' должно быть 'male' или 'female'")
-        return v
+    face_url: Optional[str] = None
+    # Валидатор не нужен - Pydantic автоматически проверяет Enum
 
 
 class ChildResponse(BaseModel):
@@ -245,65 +236,83 @@ def update_child(
     Принимает те же поля, что и ChildCreateRequest, все опциональные:
     name, age, interests, fears, character, moral, face_url.
     """
-    user_id = current_user.get("sub") or current_user.get("id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid user token")
+    try:
+        logger.info(f"📝 update_child: Запрос на обновление child_id={child_id}")
+        logger.debug(f"📝 update_child: Данные запроса: {data.dict(exclude_unset=True)}")
+        
+        user_id = current_user.get("sub") or current_user.get("id")
+        if not user_id:
+            logger.error("❌ update_child: Отсутствует user_id в токене")
+            raise HTTPException(status_code=401, detail="Invalid user token")
 
-    child = (
-        db.query(Child)
-        .filter(Child.id == child_id, Child.user_id == user_id)
-        .first()
-    )
-    if not child:
-        raise HTTPException(status_code=404, detail="Ребёнок не найден")
+        child = (
+            db.query(Child)
+            .filter(Child.id == child_id, Child.user_id == user_id)
+            .first()
+        )
+        if not child:
+            logger.warning(f"⚠️ update_child: Ребёнок с id={child_id} не найден для user_id={user_id}")
+            raise HTTPException(status_code=404, detail="Ребёнок не найден")
 
-    # Обновляем только переданные поля
-    if data.name is not None:
-        child.name = data.name
-    if data.age is not None:
-        child.age = data.age
-    if data.gender is not None:
-        child.gender = data.gender.value  # Используем .value для получения строки из Enum
-    if data.interests is not None:
-        child.interests = data.interests.split(", ") if data.interests else []
-    if data.fears is not None:
-        child.fears = data.fears.split(", ") if data.fears else []
-    if data.character is not None:
-        child.personality = data.character
-    if data.moral is not None:
-        child.moral = data.moral
-    if data.face_url is not None:
-        child.face_url = data.face_url
+        logger.info(f"✓ update_child: Найден ребёнок id={child.id}, name={child.name}")
 
-    db.commit()
-    db.refresh(child)
+        # Обновляем только переданные поля
+        updated_fields = []
+        if data.name is not None:
+            child.name = data.name
+            updated_fields.append("name")
+        if data.age is not None:
+            child.age = data.age
+            updated_fields.append("age")
+        if data.gender is not None:
+            child.gender = data.gender.value  # Используем .value для получения строки из Enum
+            updated_fields.append("gender")
+        if data.interests is not None:
+            child.interests = data.interests.split(", ") if data.interests else []
+            updated_fields.append("interests")
+        if data.fears is not None:
+            child.fears = data.fears.split(", ") if data.fears else []
+            updated_fields.append("fears")
+        if data.character is not None:
+            child.personality = data.character
+            updated_fields.append("character")
+        if data.moral is not None:
+            child.moral = data.moral
+            updated_fields.append("moral")
+        if data.face_url is not None:
+            child.face_url = data.face_url
+            updated_fields.append("face_url")
 
-    photos_urls = _get_child_photos_urls(child.id)
+        logger.info(f"📝 update_child: Обновлены поля: {', '.join(updated_fields) if updated_fields else 'нет изменений'}")
 
-    return ChildResponse(
-        id=str(child.id),
-        name=child.name,
-        age=child.age,
-        gender=child.gender or "male",  # Fallback для старых записей
-        interests=", ".join(child.interests) if isinstance(child.interests, list) else (child.interests or ""),
-        fears=", ".join(child.fears) if isinstance(child.fears, list) else (child.fears or ""),
-        character=child.personality or "",
-        moral=child.moral or "",
-        face_url=child.face_url,
-        photos=photos_urls,
-    )
-    
-    return ChildResponse(
-        id=str(child.id),
-        name=child.name,
-        age=child.age,
-        interests=data.interests,
-        fears=data.fears,
-        character=data.character,
-        moral=data.moral,
-        face_url=None,
-        photos=[]
-    )
+        db.commit()
+        db.refresh(child)
+
+        photos_urls = _get_child_photos_urls(child.id)
+        logger.info(f"✓ update_child: Успешно обновлён ребёнок id={child.id}, получено {len(photos_urls)} фотографий")
+
+        return ChildResponse(
+            id=str(child.id),
+            name=child.name,
+            age=child.age,
+            gender=child.gender or "male",  # Fallback для старых записей
+            interests=", ".join(child.interests) if isinstance(child.interests, list) else (child.interests or ""),
+            fears=", ".join(child.fears) if isinstance(child.fears, list) else (child.fears or ""),
+            character=child.personality or "",
+            moral=child.moral or "",
+            face_url=child.face_url,
+            photos=photos_urls,
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"❌ update_child: Ошибка валидации данных: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Ошибка валидации данных: {str(e)}")
+    except Exception as e:
+        logger.error(f"❌ update_child: Неожиданная ошибка при обновлении child_id={child_id}: {str(e)}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Внутренняя ошибка сервера: {str(e)}")
 
 
 @router.post("/{child_id}/photos")

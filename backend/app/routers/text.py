@@ -116,17 +116,26 @@ async def _create_text_internal(
         # Парсим JSON ответ
         try:
             text_data = json.loads(gpt_response)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ _create_text_internal: Ошибка парсинга JSON: {str(e)}")
+            logger.error(f"❌ _create_text_internal: Первые 500 символов ответа: {gpt_response[:500]}")
             # Если GPT вернул не чистый JSON, попробуем извлечь JSON из текста
             import re
-            json_match = re.search(r'\{.*\}', gpt_response, re.DOTALL)
+            # Ищем JSON объект, который может быть обернут в markdown код блоки
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', gpt_response, re.DOTALL)
+            if not json_match:
+                # Пробуем найти просто JSON объект
+                json_match = re.search(r'\{.*\}', gpt_response, re.DOTALL)
             if json_match:
                 try:
-                    text_data = json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    raise ValueError(f"Не удалось распарсить JSON из ответа GPT. Ответ: {gpt_response[:200]}")
+                    json_str = json_match.group(1) if json_match.lastindex >= 1 else json_match.group(0)
+                    text_data = json.loads(json_str)
+                    logger.info(f"✅ _create_text_internal: JSON успешно извлечен из текста")
+                except json.JSONDecodeError as e2:
+                    logger.error(f"❌ _create_text_internal: Ошибка парсинга извлеченного JSON: {str(e2)}")
+                    raise ValueError(f"Не удалось распарсить JSON из ответа GPT. Ошибка: {str(e2)}. Ответ (первые 500 символов): {gpt_response[:500]}")
             else:
-                raise ValueError(f"Не удалось найти JSON в ответе GPT. Ответ: {gpt_response[:200]}")
+                raise ValueError(f"Не удалось найти JSON в ответе GPT. Ответ (первые 500 символов): {gpt_response[:500]}")
         
         # Обновляем тексты сцен в БД
         scenes_dict = {scene.order: scene for scene in scenes}

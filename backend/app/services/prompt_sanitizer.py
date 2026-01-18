@@ -246,6 +246,86 @@ def build_cover_prompt(base_style: str, scene_prompt: str, age_emphasis: str = "
     return final_prompt
 
 
+def sanitize_scene_prompt(prompt: str, style: str = None, age_emphasis: str = None) -> str:
+    """
+    Очищает промпт для обычной сцены (не обложки) от метаданных,
+    которые могут попасть в изображение как текст.
+    
+    КРИТИЧНО: Pollinations.ai рендерит текст из промпта на изображении!
+    Убираем: "Visual style:", "IMPORTANT:", имена, возраст в явном виде, метаданные.
+    
+    Args:
+        prompt: Исходный промпт сцены
+        style: Стиль изображения (добавляется в конец, а не в начало)
+        age_emphasis: Акцент на возрасте (будет переформулирован)
+    
+    Returns:
+        str: Очищенный промпт
+    """
+    if not prompt:
+        return prompt
+    
+    cleaned = prompt
+    
+    # 1. Убираем "Visual style:" и подобные префиксы - они рендерятся как текст!
+    cleaned = re.sub(r'^Visual\s+style\s*:\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\bVisual\s+style\s*:\s*', '', cleaned, flags=re.IGNORECASE)
+    
+    # 2. Убираем "IMPORTANT:" - это рендерится как текст!
+    cleaned = re.sub(r'\bIMPORTANT\s*:\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\bКРИТИЧНО\s*:\s*', '', cleaned, flags=re.IGNORECASE)
+    
+    # 3. Убираем явные указания возраста - они рендерятся как текст!
+    # "5-year-old", "5 years old", "aged 5", "ребенок 5 лет"
+    cleaned = re.sub(r'\b\d+\s*-\s*year\s*-\s*old\b', 'young child', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\b\d+\s*years?\s*old\b', 'young child', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\baged\s+\d+\b', 'young child', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\bребенок\s+\d+\s*лет\b', 'ребенок', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\b\d+\s*лет\b', '', cleaned, flags=re.IGNORECASE)
+    
+    # 4. Убираем инструкции о пропорциях - они рендерятся как текст!
+    patterns_to_remove = [
+        r'The child character must look exactly[^.]*\.',
+        r'child proportions[^.]*\.',
+        r'large head relative to body[^.]*\.',
+        r'short legs, small hands[^.]*\.',
+        r'chubby cheeks, big eyes[^.]*\.',
+        r'with child proportions[^.]*\.',
+        r'child must look[^.]*\.',
+    ]
+    for pattern in patterns_to_remove:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+    
+    # 5. Убираем имена персонажей - они могут рендериться как текст
+    # Заменяем конкретные имена на "the child"
+    common_names = ['Sofya', 'Sophia', 'Sofia', 'Masha', 'Маша', 'Софья', 'София', 'Dasha', 'Даша', 'Anya', 'Аня']
+    for name in common_names:
+        cleaned = re.sub(rf'\b{name}\b', 'the child', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\bnamed\s+\w+\b', '', cleaned, flags=re.IGNORECASE)
+    
+    # 6. Убираем "StoryHero" - это бренд, не должен быть в промпте
+    cleaned = re.sub(r'\bStoryHero\b', '', cleaned, flags=re.IGNORECASE)
+    
+    # 7. Убираем двойные пробелы и лишние точки
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    cleaned = re.sub(r'\.\s*\.', '.', cleaned)
+    cleaned = re.sub(r',\s*,', ',', cleaned)
+    cleaned = cleaned.strip()
+    
+    # 8. Добавляем стиль в конец (не в начало!) - так меньше шансов, что он попадет в изображение
+    if style and style not in cleaned.lower():
+        cleaned = f"{cleaned}, {style} style illustration"
+    
+    # 9. Добавляем негативный промпт против текста
+    negative = "no text, no letters, no words, no watermarks"
+    if negative not in cleaned.lower():
+        cleaned = f"{cleaned}. {negative}"
+    
+    logger.info(f"🧼 Scene prompt sanitized: len={len(cleaned)}, preview={cleaned[:100]}...")
+    
+    return cleaned
+
+
 def assert_no_text(prompt: str, is_cover: bool = True) -> None:
     """
     Проверяет, что промпт не содержит инструкций о тексте.

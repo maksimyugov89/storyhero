@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -71,9 +72,10 @@ else:
         print("✓ GEMINI_API_KEY установлен")
 
 # Теперь импортируем модули, которые используют переменные окружения
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -110,14 +112,102 @@ app = FastAPI(
 
 scheduler: AsyncIOScheduler | None = None
 
-# Настройка CORS для Flutter приложения
+# =============================================================================
+# CORS настройки для веб-версии и мобильного приложения
+# =============================================================================
+# Разрешённые origins для CORS
+ALLOWED_ORIGINS = [
+    # Production домены
+    "https://storyhero.ru",
+    "https://www.storyhero.ru",
+    "https://api.storyhero.ru",
+    # Development
+    "http://localhost:3000",      # React/Next.js dev server
+    "http://localhost:8080",      # Flutter Web dev server
+    "http://localhost:5000",      # Другие dev серверы
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8080",
+    "http://127.0.0.1:5000",
+    # Примечание: localhost с любым портом поддерживается через allow_origin_regex
+]
+
+# Настройка CORS для Flutter приложения и веб-версии
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В production указать конкретные домены
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Request-ID"],
+    max_age=600,
 )
+
+# =============================================================================
+# Security Headers Middleware
+# =============================================================================
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Добавляет заголовки безопасности к ответам."""
+    response = await call_next(request)
+    
+    # HSTS - принудительное использование HTTPS (1 год)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    
+    # Предотвращение MIME-sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    
+    # Защита от clickjacking (разрешаем только с того же домена)
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    
+    # XSS защита (для старых браузеров)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    
+    # Referrer Policy
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    return response
+
+
+# =============================================================================
+# Request Logging Middleware (для отладки CORS)
+# =============================================================================
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Логирует запросы с origin для отладки CORS."""
+    origin = request.headers.get("origin", "no-origin")
+    method = request.method
+    path = request.url.path
+    
+    # Логируем только запросы с origin (браузерные запросы)
+    if origin != "no-origin":
+        logger.info(f"🌐 Web request: {method} {path} from origin: {origin}")
+    
+    try:
+        response = await call_next(request)
+        
+        # Логируем ошибки CORS (когда origin не разрешён)
+        import re
+
+        if origin != "no-origin":
+            allowed = (
+                origin in ALLOWED_ORIGINS
+                or re.match(r"http://localhost:\d+", origin)
+                or re.match(r"http://127\.0\.0\.1:\d+", origin)
+            )
+            if not allowed:
+                logger.warning(
+                    f"⚠️ CORS: Запрос с неразрешённого origin: {origin} → {method} {path}"
+                )
+        
+        # Логируем статус ответа для важных эндпоинтов
+        if path.startswith("/api/v1/children") and method in ["PUT", "POST"]:
+            logger.info(f"📝 {method} {path} → {response.status_code}")
+        
+        return response
+    except Exception as e:
+        logger.error(f"❌ Ошибка при обработке запроса {method} {path}: {str(e)}", exc_info=True)
+        raise
 
 # Подключение статической раздачи файлов
 # Файлы доступны по /static/children/<child_id>/<filename> или /static/general/<filename>
@@ -305,3 +395,29 @@ def health_db(db: Session = Depends(get_db)):
         return {"db": "ok", "result": result}
     except Exception as e:
         return {"db": "error", "detail": str(e)}
+
+
+# =============================================================================
+# CORS Test Endpoint
+# =============================================================================
+@app.get("/api/v1/cors-test")
+@app.get("/cors-test")
+def cors_test(request: Request):
+    origin = request.headers.get("origin", "no-origin")
+    return {
+        "status": "ok",
+        "message": "CORS is configured correctly",
+        "request_origin": origin,
+        "origin_allowed": (
+            origin == "no-origin"
+            or origin in ALLOWED_ORIGINS
+            or re.match(r"http://localhost:\d+", origin)
+        ),
+        "allowed_origins": ALLOWED_ORIGINS,
+        "cors_info": {
+            "credentials": True,
+            "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+            "max_age": 600
+        }
+    }
+

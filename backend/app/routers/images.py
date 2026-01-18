@@ -100,12 +100,14 @@ async def _generate_draft_images_internal(
         child = db.query(Child).filter(Child.id == book.child_id).first() if book.child_id else None
         age_emphasis = f"The child character must look exactly {child.age} years old with child proportions: large head relative to body, short legs, small hands, chubby cheeks, big eyes. " if child and child.age else ""
         
-        # КРИТИЧНО: Для обложки используем sanitizer, чтобы убрать "Visual style:", "IMPORTANT:", "Book cover illustration"
+        # КРИТИЧНО: Для ВСЕХ сцен используем sanitizer, чтобы убрать метаданные,
+        # которые Pollinations.ai рендерит как текст на изображении!
+        # Убираем: "Visual style:", "IMPORTANT:", имена, возраст, инструкции о пропорциях
         from ..services.scene_utils import is_cover_scene
-        from ..services.prompt_sanitizer import build_cover_prompt
+        from ..services.prompt_sanitizer import build_cover_prompt, sanitize_scene_prompt
         
         if is_cover_scene(scene):
-            # Для обложки используем sanitizer - убирает все инструкции о тексте
+            # Для обложки используем специальный sanitizer - убирает ВСЕ инструкции о тексте
             enhanced_prompt = build_cover_prompt(
                 base_style=final_style or "storybook",
                 scene_prompt=scene.image_prompt or "",
@@ -113,21 +115,26 @@ async def _generate_draft_images_internal(
             )
             logger.info(f"🧼 Cover draft prompt sanitized (order={scene.order})")
         else:
-            # Для обычных сцен формируем промпт БЕЗ "Visual style:" и "IMPORTANT:" в начале
-            # Эти фразы попадают в изображение как текст!
+            # КРИТИЧНО: Для обычных сцен тоже используем sanitizer!
+            # Pollinations.ai рендерит "Visual style:", "IMPORTANT:", имена как текст на изображении!
             if final_style:
                 # Для новых премиум стилей (marvel, dc, anime) используем специальные промпты
                 if final_style in ['marvel', 'dc', 'anime']:
                     from ..services.style_prompts import get_style_prompt
-                    enhanced_prompt = get_style_prompt(final_style, scene.image_prompt or "", is_cover=False)
-                    if age_emphasis:
-                        enhanced_prompt = f"{age_emphasis}{enhanced_prompt}"
+                    base_prompt = get_style_prompt(final_style, scene.image_prompt or "", is_cover=False)
+                    # Санитизируем результат - убираем метаданные
+                    enhanced_prompt = sanitize_scene_prompt(base_prompt, style=None)  # стиль уже в промпте
                 else:
-                    # Используем стиль, но БЕЗ префикса "Visual style:"
-                    enhanced_prompt = f"{final_style} style. {age_emphasis}{scene.image_prompt}"
+                    # Санитизируем промпт и добавляем стиль в конец (не в начало!)
+                    enhanced_prompt = sanitize_scene_prompt(
+                        scene.image_prompt or "",
+                        style=final_style
+                    )
             else:
-                enhanced_prompt = f"{age_emphasis}{scene.image_prompt}"
+                enhanced_prompt = sanitize_scene_prompt(scene.image_prompt or "", style="storybook")
                 final_style = "storybook"  # дефолтный стиль
+            
+            logger.info(f"🧼 Scene prompt sanitized (order={scene.order}): {enhanced_prompt[:100]}...")
         
         # Генерируем черновое изображение через image_pipeline
         try:

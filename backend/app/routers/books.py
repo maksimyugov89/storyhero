@@ -38,16 +38,33 @@ router = APIRouter(prefix="/books", tags=["books"])
 
 @router.get("")
 def list_books(
+    child_id: Optional[int] = None,  # Опциональный фильтр по child_id
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Получить список всех книг текущего пользователя."""
+    """
+    Получить список всех книг текущего пользователя.
+    
+    Если передан child_id, возвращает только книги для этого ребёнка.
+    """
     user_id = current_user.get("sub") or current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid user token: missing user ID")
     
     # user_id в БД хранится как строка, сравниваем как строки
-    books = db.query(Book).filter(Book.user_id == str(user_id)).all()
+    query = db.query(Book).filter(Book.user_id == str(user_id))
+    
+    # Фильтруем по child_id, если он передан
+    if child_id is not None:
+        try:
+            # Преобразуем child_id в int, если он передан как строка
+            if isinstance(child_id, str):
+                child_id = int(child_id)
+            query = query.filter(Book.child_id == child_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail=f"Неверный формат child_id: {child_id}")
+    
+    books = query.all()
     
     result = []
     for book in books:
@@ -56,13 +73,20 @@ def list_books(
         if book.is_paid:
             is_paid = book.is_paid.lower() == "true"
         
+        # Ограничиваем длину заголовка для предотвращения переполнения UI
+        # Максимум 50 символов для списка книг
+        title = book.title
+        if title and len(title) > 50:
+            title = title[:47] + "..."
+        
         result.append({
             "id": str(book.id),
-            "title": book.title,
+            "title": title,
             "status": book.status,
             "child_id": book.child_id,
             "created_at": book.created_at.isoformat() if book.created_at else None,
-            "is_paid": is_paid  # Добавлено поле is_paid как boolean
+            "is_paid": is_paid,  # Добавлено поле is_paid как boolean
+            "cover_url": book.cover_url,  # Добавлено поле cover_url для отображения обложек
         })
     
     return result
@@ -107,7 +131,8 @@ def get_book(
         "child_id": book.child_id,
         "created_at": book.created_at.isoformat() if book.created_at else None,
         "final_pdf_url": book.final_pdf_url,
-        "is_paid": is_paid  # Добавлено поле is_paid как boolean
+        "is_paid": is_paid,  # Добавлено поле is_paid как boolean
+        "cover_url": book.cover_url,  # Добавлено поле cover_url для отображения обложек
     }
 
 

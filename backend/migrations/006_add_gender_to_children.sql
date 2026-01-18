@@ -19,3 +19,5 @@ ALTER TABLE children ADD CONSTRAINT check_gender CHECK (gender IN ('male', 'fema
 CREATE INDEX IF NOT EXISTS idx_children_gender ON children(gender);
 
 
+
+

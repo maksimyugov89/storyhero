@@ -815,6 +815,7 @@ class GenerateFinalVersionResponse(BaseModel):
     task_id: str
     message: str
     book_id: str
+    child_id: Optional[str] = None  # Добавлено для совместимости с фронтендом
 
 
 async def generate_final_version_task(
@@ -1020,6 +1021,13 @@ async def generate_final_version(
             detail="У книги нет сцен для генерации"
         )
     
+    # Проверяем наличие child_id
+    if not book.child_id:
+        raise HTTPException(
+            status_code=422,
+            detail="У книги не указан профиль ребёнка (child_id)"
+        )
+    
     # Проверяем, нет ли уже запущенной задачи для этой книги
     from ..services.tasks import find_running_task
     existing_task = find_running_task({
@@ -1033,7 +1041,8 @@ async def generate_final_version(
         return GenerateFinalVersionResponse(
             task_id=existing_task,
             message="Генерация финальной версии уже запущена",
-            book_id=book_id
+            book_id=book_id,
+            child_id=str(book.child_id)  # child_id уже проверен выше
         )
     
     # Создаем задачу генерации
@@ -1056,7 +1065,8 @@ async def generate_final_version(
     return GenerateFinalVersionResponse(
         task_id=task_id,
         message="Генерация финальной версии запущена",
-        book_id=book_id
+        book_id=book_id,
+        child_id=str(book.child_id)  # child_id уже проверен выше
     )
 
 

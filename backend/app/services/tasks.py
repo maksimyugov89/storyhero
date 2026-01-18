@@ -59,7 +59,7 @@ def create_task(fn: Callable, *args, meta: Optional[Dict[str, Any]] = None, task
             return existing_task_id
     
     if not task_id:
-    task_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
     
     TASKS[task_id] = {
         "status": "pending",
@@ -86,7 +86,7 @@ def create_task(fn: Callable, *args, meta: Optional[Dict[str, Any]] = None, task
             # Создаем таймаут для задачи
             try:
                 # Передаем task_id в функцию, если она принимает этот параметр
-            if asyncio.iscoroutinefunction(fn):
+                if asyncio.iscoroutinefunction(fn):
                     # Проверяем, принимает ли функция task_id
                     import inspect
                     sig = inspect.signature(fn)
@@ -105,11 +105,11 @@ def create_task(fn: Callable, *args, meta: Optional[Dict[str, Any]] = None, task
                     sig = inspect.signature(fn)
                     if 'task_id' in sig.parameters:
                         result = fn(*args, task_id=task_id, **kwargs)
-            else:
-                result = fn(*args, **kwargs)
+                    else:
+                        result = fn(*args, **kwargs)
                 
-            logger.info(f"✅ Задача {task_id} успешно завершена")
-            mark_completed(task_id, result)
+                logger.info(f"✅ Задача {task_id} успешно завершена")
+                mark_completed(task_id, result)
             except asyncio.TimeoutError:
                 error_msg = f"Задача превысила максимальное время выполнения ({MAX_TASK_DURATION.total_seconds() / 60:.0f} минут)"
                 logger.error(f"⏱️ Таймаут задачи {task_id}: {error_msg}")
@@ -123,25 +123,19 @@ def create_task(fn: Callable, *args, meta: Optional[Dict[str, Any]] = None, task
                 # HTTPException имеет атрибут detail
                 error_msg = str(e.detail)
             else:
-            error_msg = str(e)
+                error_msg = str(e)
             
             logger.error(f"❌ Ошибка в задаче {task_id}: {error_msg}", exc_info=True)
             
             # Обновляем статус задачи на error
             if task_id in TASKS:
-            TASKS[task_id]["status"] = "error"
-            TASKS[task_id]["error"] = error_msg
+                TASKS[task_id]["status"] = "error"
+                TASKS[task_id]["error"] = error_msg
                 TASKS[task_id]["completed_at"] = datetime.now().isoformat()
-                    logger.info(f"✅ Задача {task_id} обновлена: status=error, error={{error_msg[:100]}}")
+                logger.info(f"✅ Задача {task_id} обновлена: status=error, error={error_msg[:100]}")
             else:
                 logger.warning(f"⚠️ Задача {task_id} не найдена в TASKS при обработке ошибки")
     
-        except Exception as e:
-            logger.error(f"❌ Критическая ошибка в задаче {task_id}: {e}", exc_info=True)
-            if task_id in TASKS:
-                TASKS[task_id]["status"] = "error"
-                TASKS[task_id]["error"] = str(e)
-                TASKS[task_id]["completed_at"] = datetime.now().isoformat()
     asyncio.create_task(run_task())
     
     return task_id
@@ -200,4 +194,3 @@ def mark_completed(task_id: str, result: Any):
         TASKS[task_id]["result"] = result
         TASKS[task_id]["completed_at"] = datetime.now().isoformat()
         logger.info(f"✅ Задача {task_id} отмечена как успешно выполненная")
-

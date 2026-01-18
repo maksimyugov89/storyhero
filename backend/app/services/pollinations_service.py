@@ -62,6 +62,31 @@ async def generate_raw_image(prompt: str, max_retries: int = 2, is_cover: bool =
                 cleaned_prompt = re.sub(r'\.\s*\.', '.', cleaned_prompt)
                 cleaned_prompt = cleaned_prompt.strip()
             
+            # КРИТИЧНО: Дополнительная очистка от метаданных, которые рендерятся как текст
+            # Убираем: "Visual style:", "IMPORTANT:", имена, возраст, инструкции о пропорциях
+            metadata_patterns = [
+                r'^Visual\s+style\s*:\s*',
+                r'\bVisual\s+style\s*:\s*',
+                r'\bIMPORTANT\s*:\s*',
+                r'\bКРИТИЧНО\s*:\s*',
+                r'The child character must look exactly[^.]*\.',
+                r'child proportions[^.]*\.',
+                r'large head relative to body[^.]*\.',
+                r'short legs, small hands[^.]*\.',
+                r'chubby cheeks, big eyes[^.]*\.',
+                r'with child proportions[^.]*\.',
+                r'\b\d+\s*-\s*year\s*-\s*old\b',
+                r'\b\d+\s*years?\s*old\b',
+                r'\baged\s+\d+\b',
+                r'\bnamed\s+\w+\b',
+                r'\bStoryHero\b',
+            ]
+            for pattern in metadata_patterns:
+                cleaned_prompt = re.sub(pattern, '', cleaned_prompt, flags=re.IGNORECASE)
+            
+            # Убираем двойные пробелы после очистки
+            cleaned_prompt = re.sub(r'\s+', ' ', cleaned_prompt).strip()
+            
             # Проверяем, нужно ли переводить (если промпт уже на английском, пропускаем перевод)
             # Это поможет избежать добавления инструкций о тексте Gemini
             is_mostly_english = len(re.findall(r'[a-zA-Z]', cleaned_prompt)) > len(re.findall(r'[а-яА-Я]', cleaned_prompt)) * 2
@@ -114,6 +139,7 @@ async def generate_raw_image(prompt: str, max_retries: int = 2, is_cover: bool =
             
             # КРИТИЧЕСКИ ВАЖНО: Удаляем все инструкции о тексте, которые Gemini мог добавить
             # Удаляем все фразы, содержащие упоминания о тексте/названии
+            # А также метаданные, которые рендерятся как текст на изображении!
             patterns_to_remove = [
                 r"The title '[^']+' \(in Russian Cyrillic letters\) MUST be written/drawn[^.]*\.",
                 r"The title should be[^.]*\.",
@@ -127,6 +153,19 @@ async def generate_raw_image(prompt: str, max_retries: int = 2, is_cover: bool =
                 r"title.*text.*readable",
                 r"title.*artwork",
                 r"comic book covers.*title",
+                # КРИТИЧНО: Убираем метаданные, которые рендерятся как текст на изображении
+                r"Visual\s+style\s*:\s*",
+                r"IMPORTANT\s*:\s*",
+                r"The child character must look exactly[^.]*\.",
+                r"child proportions[^.]*\.",
+                r"large head relative to body[^.]*\.",
+                r"short legs, small hands[^.]*\.",
+                r"chubby cheeks, big eyes[^.]*\.",
+                r"\b\d+\s*-\s*year\s*-\s*old\b",
+                r"\b\d+\s*years?\s*old\b",
+                r"\baged\s+\d+\b",
+                r"\bnamed\s+\w+\b",
+                r"\bStoryHero\b",
             ]
             
             for pattern in patterns_to_remove:
