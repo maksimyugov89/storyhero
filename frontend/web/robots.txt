@@ -1,0 +1,24 @@
+# StoryHero Web Robots.txt
+# https://storyhero.ru
+
+User-agent: *
+Allow: /
+
+# Запрещаем индексацию защищенных разделов
+Disallow: /app/
+Disallow: /auth/splash
+
+# Разрешаем индексацию публичных страниц
+Allow: /auth/login
+Allow: /auth/register
+
+# Запрещаем индексацию служебных файлов
+Disallow: /flutter_bootstrap.js
+Disallow: /flutter_service_worker.js
+Disallow: /main.dart.js
+Disallow: /assets/
+Disallow: /canvaskit/
+Disallow: /icons/
+
+# Sitemap
+Sitemap: https://storyhero.ru/sitemap.xml
