@@ -1,4 +1,4 @@
-# <img width="256" alt="icon" src="https://github.com/user-attachments/assets/bc0704c8-8342-4c96-ac48-06631abec4cc" /> StoryHero
+# <img width="64" height="74" alt="logo" src="https://github.com/user-attachments/assets/bc0704c8-8342-4c96-ac48-06631abec4cc" /> StoryHero
 
 StoryHero — это мобильное приложение для создания персонализированных детских книг с помощью искусственного интеллекта.
 
